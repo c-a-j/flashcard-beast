@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-read-file-base64"
+description = "Enables reading a file as base64 for bulk create OCR (Tesseract.js)."
+commands.allow = ["read_file_base64"]

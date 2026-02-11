@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-cards"
+description = "Enables the get_cards command to load notecards from SQLite."
+commands.allow = ["get_cards"]

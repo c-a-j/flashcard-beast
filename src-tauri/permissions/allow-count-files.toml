@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-count-files"
+description = "Enables counting files in a directory by format for bulk create."
+commands.allow = ["count_files_in_directory"]

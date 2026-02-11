@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-clear-skipped-for-collection"
+description = "Enables the clear_skipped_for_collection command to reset skipped state for a collection."
+commands.allow = ["clear_skipped_for_collection"]

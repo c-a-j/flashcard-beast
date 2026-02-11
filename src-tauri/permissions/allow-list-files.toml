@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-list-files"
+description = "Enables listing files in a directory by format for bulk create."
+commands.allow = ["list_files_in_directory"]

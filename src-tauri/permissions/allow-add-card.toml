@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-add-card"
+description = "Enables the add_card command to save notecards to SQLite."
+commands.allow = ["add_card"]

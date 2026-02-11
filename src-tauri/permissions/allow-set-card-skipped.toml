@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-set-card-skipped"
+description = "Enables the set_card_skipped command to mark a card as skipped/known."
+commands.allow = ["set_card_skipped"]

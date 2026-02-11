@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-import-collections-from-path"
+description = "Enables importing collections from a JSON file at a user-chosen path."
+commands.allow = ["read_export_file", "import_collection_from_file", "import_collections_from_path"]

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-export-collections-to-path"
+description = "Enables exporting one or all collections (card data only) to a JSON file at a user-chosen path."
+commands.allow = ["export_collection_to_path", "export_collections_to_path"]
