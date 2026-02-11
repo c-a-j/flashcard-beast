@@ -18,11 +18,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
-type StoredCard = { id: number; question: string; answer: string; title: string; skipped?: boolean };
+
+type StoredCard = { id: number; question: string; answer: string; title: string; skipped?: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
+type StoredSubCollection = { id: number; name: string; collection_id: number };
 
 export function EditCards() {
   const [collections, setCollections] = useState<StoredCollection[]>([]);
@@ -35,9 +39,16 @@ export function EditCards() {
   const [editQuestion, setEditQuestion] = useState("");
   const [editAnswer, setEditAnswer] = useState("");
   const [editCollectionId, setEditCollectionId] = useState<string>("");
+  const [editSubCollectionId, setEditSubCollectionId] = useState<string>("");
+  const [editSubCollections, setEditSubCollections] = useState<StoredSubCollection[]>([]);
+  const [editCollectionAction, setEditCollectionAction] = useState<"move" | "copy">("move");
+  const [newSubCollectionOpen, setNewSubCollectionOpen] = useState(false);
+  const [newSubCollectionName, setNewSubCollectionName] = useState("");
+  const [creatingSubCollection, setCreatingSubCollection] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addingCopy, setAddingCopy] = useState(false);
   const [clearingSkips, setClearingSkips] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,12 +94,45 @@ export function EditCards() {
     };
   }, [selectedCollectionId]);
 
+  useEffect(() => {
+    if (!editingCard || !editCollectionId) {
+      setEditSubCollections([]);
+      setEditSubCollectionId("");
+      return;
+    }
+    setEditSubCollections([]);
+    setEditSubCollectionId("");
+    let cancelled = false;
+    invoke<StoredSubCollection[]>("get_sub_collections", {
+      collectionId: Number(editCollectionId),
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setEditSubCollections(data);
+          const cardSubId = editingCard.sub_collection_id;
+          if (cardSubId != null && data.some((s) => s.id === cardSubId)) {
+            setEditSubCollectionId(String(cardSubId));
+          } else {
+            setEditSubCollectionId(data[0] ? String(data[0].id) : "");
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEditSubCollections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editingCard, editCollectionId]);
+
   function openEdit(card: StoredCard) {
     setEditingCard(card);
     setEditTitle(card.title ?? "");
     setEditQuestion(card.question);
     setEditAnswer(card.answer);
     setEditCollectionId(selectedCollectionId);
+    setEditSubCollectionId(""); // Set from card after sub-collections load (in useEffect)
+    setModalError(null);
   }
 
   function closeEdit() {
@@ -97,18 +141,21 @@ export function EditCards() {
     setEditQuestion("");
     setEditAnswer("");
     setEditCollectionId("");
+    setEditSubCollectionId("");
+    setEditCollectionAction("move");
+    setModalError(null);
   }
 
-  const cardCurrentCollectionId = selectedCollectionId;
   const selectedCollectionIsDifferent =
-    editCollectionId !== "" && editCollectionId !== cardCurrentCollectionId;
+    editCollectionId !== "" &&
+    editCollectionId !== selectedCollectionId;
 
   async function handleSaveEdit() {
     if (!editingCard) return;
     const cid = Number(editCollectionId);
     if (!editCollectionId || Number.isNaN(cid)) return;
     setSaving(true);
-    setError(null);
+    setModalError(null);
     try {
       await invoke("update_card", {
         id: editingCard.id,
@@ -116,13 +163,20 @@ export function EditCards() {
         answer: editAnswer.trim(),
         collectionId: cid,
         title: editTitle.trim() || undefined,
+        subCollectionId: editSubCollectionId ? Number(editSubCollectionId) : undefined,
       });
       const currentId = Number(selectedCollectionId);
       if (cid === currentId) {
         setCards((prev) =>
           prev.map((c) =>
             c.id === editingCard.id
-              ? { ...c, title: editTitle.trim(), question: editQuestion.trim(), answer: editAnswer.trim() }
+              ? {
+                  ...c,
+                  title: editTitle.trim(),
+                  question: editQuestion.trim(),
+                  answer: editAnswer.trim(),
+                  sub_collection_id: editSubCollectionId ? Number(editSubCollectionId) : null,
+                }
               : c
           )
         );
@@ -131,7 +185,7 @@ export function EditCards() {
       }
       closeEdit();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setModalError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -142,18 +196,44 @@ export function EditCards() {
     const cid = Number(editCollectionId);
     if (Number.isNaN(cid)) return;
     setAddingCopy(true);
-    setError(null);
+    setModalError(null);
     try {
       await invoke("add_card", {
         question: editQuestion.trim(),
         answer: editAnswer.trim(),
         collectionId: cid,
         title: editTitle.trim() || undefined,
+        subCollectionId: editSubCollectionId ? Number(editSubCollectionId) : undefined,
       });
+      closeEdit();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setModalError(e instanceof Error ? e.message : String(e));
     } finally {
       setAddingCopy(false);
+    }
+  }
+
+  async function handleCreateSubCollectionInModal() {
+    const name = newSubCollectionName.trim();
+    const cid = editCollectionId ? Number(editCollectionId) : null;
+    if (!name || cid == null) return;
+    setCreatingSubCollection(true);
+    setModalError(null);
+    try {
+      const created = await invoke<StoredSubCollection>("create_sub_collection", {
+        collectionId: cid,
+        name,
+      });
+      setEditSubCollections((prev) =>
+        [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setEditSubCollectionId(String(created.id));
+      setNewSubCollectionName("");
+      setNewSubCollectionOpen(false);
+    } catch (e) {
+      setModalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingSubCollection(false);
     }
   }
 
@@ -344,6 +424,115 @@ export function EditCards() {
             <DialogTitle>Edit card</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-2 items-center">
+              <Label className="shrink-0">Collection</Label>
+                <Select value={editCollectionId} onValueChange={(v) => { setEditCollectionId(v); setEditSubCollectionId(""); }}>
+                  <SelectTrigger className="w-full min-w-0">
+                    <SelectValue placeholder="Collection…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {collections.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div
+                  className="flex h-8 rounded-md border bg-muted/30 p-0.5"
+                  role="group"
+                  aria-label="Move or copy to collection"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setEditCollectionAction("move")}
+                    className={cn(
+                      "flex-1 rounded-sm px-3 text-sm font-medium transition-colors",
+                      editCollectionAction === "move"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Move
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditCollectionAction("copy")}
+                    className={cn(
+                      "flex-1 rounded-sm px-3 text-sm font-medium transition-colors",
+                      editCollectionAction === "copy"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Copy
+                  </button>
+                </div>
+              <Label className="shrink-0">Sub Collection</Label>
+              <Select
+                value={editSubCollectionId}
+                onValueChange={setEditSubCollectionId}
+                disabled={!editCollectionId}
+              >
+                <SelectTrigger className="w-full min-w-0">
+                  <SelectValue placeholder="None (optional)…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {editSubCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Dialog open={newSubCollectionOpen} onOpenChange={setNewSubCollectionOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="New sub collection"
+                    disabled={!editCollectionId}
+                    className="h-8 w-8 shrink-0"
+                  >
+                    +
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>New sub collection</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-2 py-2">
+                    <Label htmlFor="edit-new-sub-collection-name">Name</Label>
+                    <Input
+                      id="edit-new-sub-collection-name"
+                      placeholder="e.g. Chapter 1"
+                      value={newSubCollectionName}
+                      onChange={(e) => setNewSubCollectionName(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && handleCreateSubCollectionInModal()
+                      }
+                    />
+                  </div>
+                  <DialogFooter className="sm:justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNewSubCollectionOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={!newSubCollectionName.trim() || creatingSubCollection}
+                      onClick={handleCreateSubCollectionInModal}
+                    >
+                      {creatingSubCollection ? "Creating…" : "Create"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-title">Title (optional)</Label>
               <Input
@@ -373,58 +562,30 @@ export function EditCards() {
                 className="min-h-[4.5rem] resize-y"
               />
             </div>
-            <div className="grid gap-2">
-              <Label>Collection</Label>
-              <Select value={editCollectionId} onValueChange={setEditCollectionId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Collection…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {collections.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedCollectionIsDifferent && (
-                <p className="text-muted-foreground text-xs">
-                  Move card or add a copy to the selected collection?
-                </p>
-              )}
-            </div>
           </div>
-          <DialogFooter>
+          {modalError && (
+            <p className="text-destructive text-sm">{modalError}</p>
+          )}
+          <DialogFooter className="sm:justify-center">
             <Button type="button" variant="outline" onClick={closeEdit}>
               Cancel
             </Button>
-            {selectedCollectionIsDifferent ? (
-              <>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={!editQuestion.trim() || !editAnswer.trim() || addingCopy}
-                  onClick={handleAddCopyToCollection}
-                >
-                  {addingCopy ? "Adding…" : "Add copy"}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!editQuestion.trim() || !editAnswer.trim() || saving}
-                  onClick={handleSaveEdit}
-                >
-                  {saving ? "Moving…" : "Move"}
-                </Button>
-              </>
-            ) : (
-              <Button
-                type="button"
-                disabled={!editQuestion.trim() || !editAnswer.trim() || !editCollectionId || saving}
-                onClick={handleSaveEdit}
-              >
-                {saving ? "Saving…" : "Save"}
-              </Button>
-            )}
+            <Button
+              type="button"
+              disabled={
+                !editQuestion.trim() ||
+                !editAnswer.trim() ||
+                !editCollectionId ||
+                (selectedCollectionIsDifferent ? (editCollectionAction === "move" ? saving : addingCopy) : saving)
+              }
+              onClick={
+                selectedCollectionIsDifferent && editCollectionAction === "copy"
+                  ? handleAddCopyToCollection
+                  : handleSaveEdit
+              }
+            >
+              {saving || addingCopy ? "Accepting…" : "Accept"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

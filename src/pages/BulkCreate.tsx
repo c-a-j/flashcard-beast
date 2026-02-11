@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { createWorker } from "tesseract.js";
 
 type StoredCollection = { id: number; name: string };
+type StoredSubCollection = { id: number; name: string; collection_id: number };
 
 const BULK_IMAGE_FORMAT_MIME: Record<string, string> = {
   png: "image/png",
@@ -59,6 +60,11 @@ export function BulkCreate() {
   const [editTitle, setEditTitle] = useState("");
   const [editQuestion, setEditQuestion] = useState("");
   const [editAnswer, setEditAnswer] = useState("");
+  const [subCollections, setSubCollections] = useState<StoredSubCollection[]>([]);
+  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string>("");
+  const [newSubCollectionOpen, setNewSubCollectionOpen] = useState(false);
+  const [newSubCollectionName, setNewSubCollectionName] = useState("");
+  const [creatingSubCollection, setCreatingSubCollection] = useState(false);
 
   const currentQueueItem = ocrQueue.length > 0 && previewIndex >= 0 && previewIndex < ocrQueue.length
     ? ocrQueue[previewIndex]
@@ -79,7 +85,13 @@ export function BulkCreate() {
     const a = editAnswer.trim();
     if (!q || !a) return;
     try {
-      await invoke("add_card", { question: q, answer: a, collectionId: collectionIdNum, title: editTitle.trim() || undefined });
+      await invoke("add_card", {
+        question: q,
+        answer: a,
+        collectionId: collectionIdNum,
+        title: editTitle.trim() || undefined,
+        subCollectionId: selectedSubCollectionId ? Number(selectedSubCollectionId) : undefined,
+      });
       setOcrQueue((prev) => prev.filter((_, i) => i !== previewIndex));
       setFlipped(false);
     } catch {
@@ -109,6 +121,54 @@ export function BulkCreate() {
       setSelectedCollectionId(String(collections[0].id));
     }
   }, [collections, selectedCollectionId]);
+
+  useEffect(() => {
+    if (!selectedCollectionId) {
+      setSubCollections([]);
+      setSelectedSubCollectionId("");
+      return;
+    }
+    setSubCollections([]);
+    setSelectedSubCollectionId("");
+    let cancelled = false;
+    invoke<StoredSubCollection[]>("get_sub_collections", {
+      collectionId: Number(selectedCollectionId),
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setSubCollections(data);
+          setSelectedSubCollectionId(data[0] ? String(data[0].id) : "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubCollections([]);
+          setSelectedSubCollectionId("");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCollectionId]);
+
+  async function handleCreateSubCollection() {
+    const name = newSubCollectionName.trim();
+    const cid = selectedCollectionId ? Number(selectedCollectionId) : collections[0]?.id;
+    if (!name || cid == null) return;
+    setCreatingSubCollection(true);
+    try {
+      const created = await invoke<StoredSubCollection>("create_sub_collection", {
+        collectionId: cid,
+        name,
+      });
+      setSubCollections((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedSubCollectionId(String(created.id));
+      setNewSubCollectionName("");
+      setNewSubCollectionOpen(false);
+    } finally {
+      setCreatingSubCollection(false);
+    }
+  }
 
   useEffect(() => {
     if (ocrQueue.length > 0 && previewIndex >= ocrQueue.length) {
@@ -346,7 +406,7 @@ export function BulkCreate() {
             </p>
           </div>
           <div className="space-y-2">
-            <p className="text-muted-foreground text-sm font-medium">Title (optional)</p>
+            <p className="text-muted-foreground text-sm font-medium">Title</p>
             {hasProcessedText ? (
               <Input
                 value={editTitle}
@@ -390,6 +450,71 @@ export function BulkCreate() {
                 Your answer will appear here.
               </p>
             )}
+          </div>
+          <div className="grid w-full max-w-xs gap-2">
+            <Label className="text-muted-foreground text-sm font-medium">Sub Collection</Label>
+            <div className="flex gap-2">
+              <Select
+                value={selectedSubCollectionId}
+                onValueChange={setSelectedSubCollectionId}
+                disabled={!hasProcessedText || !selectedCollectionId || subCollections.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a sub collection..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {subCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Dialog open={newSubCollectionOpen} onOpenChange={setNewSubCollectionOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="New sub collection"
+                    disabled={!hasProcessedText || !selectedCollectionId}
+                  >
+                    +
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>New sub collection</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-2 py-2">
+                    <Label htmlFor="bulk-new-sub-collection-name">Name</Label>
+                    <Input
+                      id="bulk-new-sub-collection-name"
+                      placeholder="e.g. Chapter 1"
+                      value={newSubCollectionName}
+                      onChange={(e) => setNewSubCollectionName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleCreateSubCollection()}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNewSubCollectionOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={!newSubCollectionName.trim() || creatingSubCollection}
+                      onClick={handleCreateSubCollection}
+                    >
+                      {creatingSubCollection ? "Creating…" : "Create"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           <div className="space-y-2">

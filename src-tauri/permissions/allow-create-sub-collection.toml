@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-create-sub-collection"
+description = "Enables the create_sub_collection command to create a new sub-collection."
+commands.allow = ["create_sub_collection"]

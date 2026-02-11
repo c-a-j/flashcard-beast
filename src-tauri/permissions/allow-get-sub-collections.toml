@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-sub-collections"
+description = "Enables the get_sub_collections command to list sub-collections for a collection."
+commands.allow = ["get_sub_collections"]

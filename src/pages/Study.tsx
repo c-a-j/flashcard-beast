@@ -11,12 +11,17 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
-type StoredCard = { id: number; question: string; answer: string; title: string; skipped: boolean };
+const SUB_COLLECTION_ALL = "__all__"; // Radix Select forbids SelectItem value=""
+
+type StoredCard = { id: number; question: string; answer: string; title: string; skipped: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
+type StoredSubCollection = { id: number; name: string; collection_id: number };
 
 export function Study() {
   const [collections, setCollections] = useState<StoredCollection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
+  const [subCollections, setSubCollections] = useState<StoredSubCollection[]>([]);
+  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string>(SUB_COLLECTION_ALL);
   const [cards, setCards] = useState<StoredCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -49,6 +54,31 @@ export function Study() {
 
   useEffect(() => {
     if (!selectedCollectionId) {
+      setSubCollections([]);
+      setSelectedSubCollectionId(SUB_COLLECTION_ALL);
+      setLoadingCards(false);
+      setCards([]);
+      return;
+    }
+    setSubCollections([]);
+    setSelectedSubCollectionId(SUB_COLLECTION_ALL);
+    let cancelled = false;
+    invoke<StoredSubCollection[]>("get_sub_collections", {
+      collectionId: Number(selectedCollectionId),
+    })
+      .then((data) => {
+        if (!cancelled) setSubCollections(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSubCollections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCollectionId]);
+
+  useEffect(() => {
+    if (!selectedCollectionId) {
       setLoadingCards(false);
       setCards([]);
       return;
@@ -76,9 +106,19 @@ export function Study() {
     };
   }, [selectedCollectionId]);
 
+  const filteredCards = useMemo(
+    () =>
+      selectedSubCollectionId === SUB_COLLECTION_ALL
+        ? cards
+        : cards.filter(
+            (c) => c.sub_collection_id != null && c.sub_collection_id === Number(selectedSubCollectionId)
+          ),
+    [cards, selectedSubCollectionId]
+  );
+
   const sessionCards = useMemo(
-    () => cards.filter((c) => !c.skipped),
-    [cards]
+    () => filteredCards.filter((c) => !c.skipped),
+    [filteredCards]
   );
   const currentCard = sessionCards[Math.min(currentIndex, sessionCards.length - 1)];
 
@@ -164,7 +204,7 @@ export function Study() {
     );
   }
 
-  if (cards.length === 0) {
+  if (filteredCards.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-6 p-6">
         <Card>
@@ -175,10 +215,10 @@ export function Study() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="grid w-full max-w-xs gap-2">
-              <Label>Collection</Label>
+            <div className="grid max-w-xs grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
+              <Label className="shrink-0">Collection</Label>
               <Select value={selectedCollectionId} onValueChange={setSelectedCollectionId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -189,9 +229,29 @@ export function Study() {
                   ))}
                 </SelectContent>
               </Select>
+              <Label className="shrink-0">Sub Collection</Label>
+              <Select
+                value={selectedSubCollectionId}
+                onValueChange={setSelectedSubCollectionId}
+                disabled={!selectedCollectionId}
+              >
+                <SelectTrigger className="w-full min-w-0">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SUB_COLLECTION_ALL}>All</SelectItem>
+                  {subCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-muted-foreground text-sm">
-              No cards in this collection. Add some on the Create Cards page.
+              {cards.length === 0
+                ? "No cards in this collection. Add some on the Create Cards page."
+                : "No cards in this sub collection."}
             </p>
           </CardContent>
         </Card>
@@ -210,16 +270,34 @@ export function Study() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="grid w-full max-w-xs gap-2">
-              <Label>Collection</Label>
+            <div className="grid max-w-xs grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
+              <Label className="shrink-0">Collection</Label>
               <Select value={selectedCollectionId} onValueChange={setSelectedCollectionId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {collections.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Label className="shrink-0">Sub Collection</Label>
+              <Select
+                value={selectedSubCollectionId}
+                onValueChange={setSelectedSubCollectionId}
+                disabled={!selectedCollectionId}
+              >
+                <SelectTrigger className="w-full min-w-0">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SUB_COLLECTION_ALL}>All</SelectItem>
+                  {subCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -244,10 +322,10 @@ export function Study() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid w-full max-w-xs gap-2">
-            <Label>Collection</Label>
+          <div className="grid max-w-xs grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
+            <Label className="shrink-0">Collection</Label>
             <Select value={selectedCollectionId} onValueChange={setSelectedCollectionId}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -258,12 +336,30 @@ export function Study() {
                 ))}
               </SelectContent>
             </Select>
+            <Label className="shrink-0">Sub Collection</Label>
+            <Select
+              value={selectedSubCollectionId}
+              onValueChange={setSelectedSubCollectionId}
+              disabled={!selectedCollectionId}
+            >
+              <SelectTrigger className="w-full min-w-0">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SUB_COLLECTION_ALL}>All</SelectItem>
+                {subCollections.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <p className="text-muted-foreground text-sm">
             Card {currentIndex + 1} of {sessionCards.length}
-            {sessionCards.length < cards.length ? (
-              <span className="ml-1">({cards.length - sessionCards.length} skipped)</span>
+            {sessionCards.length < filteredCards.length ? (
+              <span className="ml-1">({filteredCards.length - sessionCards.length} skipped)</span>
             ) : null}
           </p>
 

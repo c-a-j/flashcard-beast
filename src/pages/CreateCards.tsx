@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 
 type StoredCollection = { id: number; name: string };
+type StoredSubCollection = { id: number; name: string; collection_id: number };
 
 export function CreateCards() {
   const [title, setTitle] = useState("");
@@ -35,6 +36,11 @@ export function CreateCards() {
   const [newCollectionOpen, setNewCollectionOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [creatingCollection, setCreatingCollection] = useState(false);
+  const [subCollections, setSubCollections] = useState<StoredSubCollection[]>([]);
+  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string>("");
+  const [newSubCollectionOpen, setNewSubCollectionOpen] = useState(false);
+  const [newSubCollectionName, setNewSubCollectionName] = useState("");
+  const [creatingSubCollection, setCreatingSubCollection] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +65,35 @@ export function CreateCards() {
     }
   }, [collections, selectedCollectionId]);
 
+  useEffect(() => {
+    if (!selectedCollectionId) {
+      setSubCollections([]);
+      setSelectedSubCollectionId("");
+      return;
+    }
+    setSubCollections([]);
+    setSelectedSubCollectionId("");
+    let cancelled = false;
+    invoke<StoredSubCollection[]>("get_sub_collections", {
+      collectionId: Number(selectedCollectionId),
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setSubCollections(data);
+          setSelectedSubCollectionId(data[0] ? String(data[0].id) : "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubCollections([]);
+          setSelectedSubCollectionId("");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCollectionId]);
+
   async function handleAddCard() {
     const q = question.trim();
     const a = answer.trim();
@@ -67,7 +102,13 @@ export function CreateCards() {
     setError(null);
     setAdding(true);
     try {
-      await invoke("add_card", { question: q, answer: a, collectionId: cid, title: title.trim() || undefined });
+      await invoke("add_card", {
+        question: q,
+        answer: a,
+        collectionId: cid,
+        title: title.trim() || undefined,
+        subCollectionId: selectedSubCollectionId ? Number(selectedSubCollectionId) : undefined,
+      });
       setTitle("");
       setQuestion("");
       setAnswer("");
@@ -94,6 +135,28 @@ export function CreateCards() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setCreatingCollection(false);
+    }
+  }
+
+  async function handleCreateSubCollection() {
+    const name = newSubCollectionName.trim();
+    const cid = selectedCollectionId ? Number(selectedCollectionId) : collections[0]?.id;
+    if (!name || cid == null) return;
+    setCreatingSubCollection(true);
+    setError(null);
+    try {
+      const created = await invoke<StoredSubCollection>("create_sub_collection", {
+        collectionId: cid,
+        name,
+      });
+      setSubCollections((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedSubCollectionId(String(created.id));
+      setNewSubCollectionName("");
+      setNewSubCollectionOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingSubCollection(false);
     }
   }
 
@@ -162,6 +225,71 @@ export function CreateCards() {
                       onClick={handleCreateCollection}
                     >
                       {creatingCollection ? "Creating…" : "Create"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+          <div className="grid w-full gap-2">
+            <Label>Sub Collection</Label>
+            <div className="flex gap-2">
+              <Select
+                value={selectedSubCollectionId}
+                onValueChange={setSelectedSubCollectionId}
+                disabled={!selectedCollectionId || subCollections.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select sub collection (optional)..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {subCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Dialog open={newSubCollectionOpen} onOpenChange={setNewSubCollectionOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="New sub collection"
+                    disabled={!selectedCollectionId}
+                  >
+                    +
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>New sub collection</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-2 py-2">
+                    <Label htmlFor="new-sub-collection-name">Name</Label>
+                    <Input
+                      id="new-sub-collection-name"
+                      placeholder="e.g. Chapter 1"
+                      value={newSubCollectionName}
+                      onChange={(e) => setNewSubCollectionName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleCreateSubCollection()}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNewSubCollectionOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={!newSubCollectionName.trim() || creatingSubCollection}
+                      onClick={handleCreateSubCollection}
+                    >
+                      {creatingSubCollection ? "Creating…" : "Create"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

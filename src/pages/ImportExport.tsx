@@ -27,7 +27,7 @@ function sanitizeFilename(name: string): string {
 
 type StoredCollection = { id: number; name: string };
 
-type FileCollectionSummary = { name: string; card_count: number };
+type FileCollectionSummary = { name: string; card_count: number; sub_collection_count: number };
 
 type ImportRowState = {
   selected: boolean;
@@ -126,12 +126,25 @@ export function ImportExport() {
       setImportFilePath(filePath);
       setFileCollections(list);
       setImportRows(
-        list.map(() => ({
-          selected: true,
-          destinationMode: collections.length > 0 ? "existing" : "new",
-          destinationId: collections.length > 0 ? String(collections[0].id) : "",
-          newName: "",
-        }))
+        list.map((fc) => {
+          const matching = collections.find(
+            (c) => c.name.trim().toLowerCase() === fc.name.trim().toLowerCase()
+          );
+          if (matching) {
+            return {
+              selected: true,
+              destinationMode: "existing" as const,
+              destinationId: String(matching.id),
+              newName: "",
+            };
+          }
+          return {
+            selected: true,
+            destinationMode: "new" as const,
+            destinationId: "",
+            newName: fc.name.trim(),
+          };
+        })
       );
       setImportModalOpen(true);
     } catch (e) {
@@ -308,7 +321,9 @@ export function ImportExport() {
                           />
                         </td>
                         <td className="p-2 align-top">
-                          {fc.name} ({fc.card_count} card{fc.card_count !== 1 ? "s" : ""})
+                          {fc.name} ({fc.card_count} card{fc.card_count !== 1 ? "s" : ""}
+                          {fc.sub_collection_count > 0 &&
+                            `, ${fc.sub_collection_count} sub collection${fc.sub_collection_count !== 1 ? "s" : ""}`})
                         </td>
                         <td className="p-2 align-top space-y-2">
                           <div className="flex items-center gap-2">
