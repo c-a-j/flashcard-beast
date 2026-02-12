@@ -3,5 +3,34 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "dialog:allow-open", "dialog:allow-save", "allow-count-files", "allow-list-files", "allow-read-file-base64", "allow-add-card", "allow-get-cards", "allow-get-collections", "allow-create-collection", "allow-get-sub-collections", "allow-create-sub-collection", "allow-update-card", "allow-delete-card", "allow-set-card-skipped", "allow-clear-skipped-for-collection", "allow-export-collections-to-path", "allow-import-collections-from-path"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://ollama.com" },
+        { "url": "https://ollama.com/*" }
+      ]
+    },
+    "allow-pick-directory",
+    "allow-count-files",
+    "allow-list-files",
+    "allow-read-file-base64",
+    "allow-add-card",
+    "allow-get-cards",
+    "allow-get-collections",
+    "allow-create-collection",
+    "allow-get-sub-collections",
+    "allow-create-sub-collection",
+    "allow-update-card",
+    "allow-delete-card",
+    "allow-set-card-skipped",
+    "allow-clear-skipped-for-collection",
+    "allow-export-collections-to-path",
+    "allow-import-collections-from-path",
+    "allow-get-ollama-api-key"
+  ]
 }

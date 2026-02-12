@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-ollama-api-key"
+description = "Enables the get_ollama_api_key command to read OLLAMA_API_KEY from the system environment for Ollama cloud auth."
+commands.allow = ["get_ollama_api_key"]

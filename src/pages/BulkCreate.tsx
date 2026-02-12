@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +21,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn, generateNotecard, parseNotecard } from "@/lib/utils";
 import { createWorker } from "tesseract.js";
+
+const OLLAMA_HOSTS = {
+  local: "http://localhost:11434",
+  cloud: "https://ollama.com",
+} as const;
 
 type StoredCollection = { id: number; name: string };
 type StoredSubCollection = { id: number; name: string; collection_id: number };
@@ -40,15 +46,25 @@ const BULK_IMAGE_FORMATS = [
   { value: "gif", label: "GIF" },
 ] as const;
 
+const BULK_DIRECTORY_STORAGE_KEY = "bulk-create-directory";
+
 export function BulkCreate() {
-  const [flipped, setFlipped] = useState(false);
   const [collections, setCollections] = useState<StoredCollection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
   const [newCollectionOpen, setNewCollectionOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [creatingCollection, setCreatingCollection] = useState(false);
   const [bulkFileFormat, setBulkFileFormat] = useState<string>("png");
-  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null);
+  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(BULK_DIRECTORY_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [llmEnabled, setLlmEnabled] = useState(true);
+  const [ollamaHost, setOllamaHost] = useState<"local" | "cloud">("local");
+  const [model, setModel] = useState("glm-4.7-flash");
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [fileCountLoading, setFileCountLoading] = useState(false);
   /** Queue of OCR results (path + text) for the Card Preview side to process later. */
@@ -70,13 +86,28 @@ export function BulkCreate() {
     ? ocrQueue[previewIndex]
     : null;
   const rawTextRead = currentQueueItem?.text ?? "";
+  const [llmResponse, setLlmResponse] = useState("");
+  const [llmLoading, setLlmLoading] = useState(false);
   const hasProcessedText = currentQueueItem != null;
 
   useEffect(() => {
     setEditTitle("");
     setEditQuestion("");
     setEditAnswer("");
+    setLlmResponse("");
   }, [previewIndex, currentQueueItem?.path]);
+
+  useEffect(() => {
+    try {
+      if (selectedDirectory) {
+        localStorage.setItem(BULK_DIRECTORY_STORAGE_KEY, selectedDirectory);
+      } else {
+        localStorage.removeItem(BULK_DIRECTORY_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedDirectory]);
 
   async function handleSave() {
     const collectionIdNum = selectedCollectionId ? Number(selectedCollectionId) : collections[0]?.id;
@@ -93,9 +124,36 @@ export function BulkCreate() {
         subCollectionId: selectedSubCollectionId ? Number(selectedSubCollectionId) : undefined,
       });
       setOcrQueue((prev) => prev.filter((_, i) => i !== previewIndex));
-      setFlipped(false);
     } catch {
       // TODO: surface error to user
+    }
+  }
+
+  async function handleRunLlm() {
+    const text = rawTextRead.trim();
+    if (!text || !llmEnabled) return;
+    setLlmLoading(true);
+    setLlmResponse("");
+    try {
+      const host = OLLAMA_HOSTS[ollamaHost];
+      const apiKey =
+        ollamaHost === "cloud" ? await invoke<string>("get_ollama_api_key") : undefined;
+      const message = await generateNotecard(
+        text,
+        model,
+        host,
+        apiKey ?? undefined,
+        ollamaHost === "cloud" ? tauriFetch : undefined
+      );
+      const content = message.content ?? "";
+      setLlmResponse(content);
+      const notecard = parseNotecard(content);
+      setEditQuestion(notecard.question);
+      setEditAnswer(notecard.answer);
+    } catch (e) {
+      setLlmResponse(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLlmLoading(false);
     }
   }
 
@@ -192,12 +250,13 @@ export function BulkCreate() {
   }
 
   async function handleSelectDirectory() {
-    const path = await open({
-      directory: true,
-      multiple: false,
-    });
-    if (path !== null) {
-      setSelectedDirectory(typeof path === "string" ? path : path[0] ?? null);
+    try {
+      const path = await invoke<string | null>("pick_directory");
+      if (path) {
+        setSelectedDirectory(path);
+      }
+    } catch (e) {
+      console.error("Directory dialog failed:", e);
     }
   }
 
@@ -359,9 +418,9 @@ export function BulkCreate() {
             <Label>Directory</Label>
             <div className="flex gap-2">
               <Input
-                readOnly
                 value={selectedDirectory ?? ""}
-                placeholder="No directory selected"
+                onChange={(e) => setSelectedDirectory(e.target.value.trim() || null)}
+                placeholder="Path or click Select…"
                 className="bg-muted/50"
               />
               <Button type="button" variant="outline" onClick={handleSelectDirectory}>
@@ -369,13 +428,92 @@ export function BulkCreate() {
               </Button>
             </div>
           </div>
+          <div className="grid w-full gap-2">
+            <Label>LLM</Label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={llmEnabled}
+              onClick={() => setLlmEnabled((v) => !v)}
+              className="relative inline-flex h-9 w-[8.5rem] rounded-md border border-input bg-muted/50 p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 bottom-0.5 rounded-[4px] bg-background shadow-sm transition-all duration-200",
+                  llmEnabled ? "left-0.5 right-1/2" : "left-1/2 right-0.5"
+                )}
+              />
+              <span
+                className={cn(
+                  "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                  llmEnabled ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                LLM On
+              </span>
+              <span
+                className={cn(
+                  "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                  !llmEnabled ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                LLM Off
+              </span>
+            </button>
+          </div>
+          <div className="grid w-full gap-2">
+            <Label>Ollama host</Label>
+            <Select
+              value={ollamaHost}
+              onValueChange={(v) => {
+                const host = v as "local" | "cloud";
+                setOllamaHost(host);
+                if (host === "cloud") setModel("deepseek-v3.1:671b-cloud");
+                if (host === "local") setModel("glm-4.7-flash");
+              }}
+              disabled={!llmEnabled}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select host..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local</SelectItem>
+                <SelectItem value="cloud">Cloud</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid w-full gap-2">
+            <Label htmlFor="bulk-model">Model</Label>
+            <Input
+              id="bulk-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="glm-4.7-flash"
+              disabled={!llmEnabled}
+            />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              disabled={!selectedDirectory || fileCount === 0 || ocrProcessing}
-              onClick={handleCreateCards}
+              variant={ocrQueue.length > 0 && !ocrProcessing ? "destructive" : "default"}
+              disabled={
+                ocrProcessing ||
+                (ocrQueue.length === 0 && (!selectedDirectory || fileCount === 0))
+              }
+              onClick={() => {
+                if (ocrQueue.length > 0 && !ocrProcessing) {
+                  setOcrQueue([]);
+                  setPreviewIndex(0);
+                } else {
+                  handleCreateCards();
+                }
+              }}
             >
-              {ocrProcessing ? "Running OCR…" : "Create Cards"}
+              {ocrProcessing
+                ? "Running OCR…"
+                : ocrQueue.length > 0
+                  ? "Stop Creating Cards"
+                  : "Create Cards"}
             </Button>
             {fileCountMessage !== null && (
               <p className="text-muted-foreground text-sm">
@@ -401,8 +539,32 @@ export function BulkCreate() {
         <CardContent className="flex flex-col gap-4">
           <div className="space-y-2">
             <p className="text-muted-foreground text-sm font-medium">Raw Text Read</p>
+            {hasProcessedText ? (
+              <Textarea
+                value={rawTextRead}
+                onChange={(e) =>
+                  setOcrQueue((prev) =>
+                    prev.map((item, i) =>
+                      i === previewIndex ? { ...item, text: e.target.value } : item
+                    )
+                  )
+                }
+                placeholder="Run OCR to see raw text from images."
+                rows={4}
+                className="min-h-[4rem] resize-y font-mono text-sm"
+              />
+            ) : (
+              <p className="whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 text-sm min-h-[4rem] text-muted-foreground">
+                {ocrQueue.length === 0
+                  ? "Run OCR to see raw text from images."
+                  : "No text for this item."}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-sm font-medium">LLM Response</p>
             <p className="whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 text-sm min-h-[4rem]">
-              {rawTextRead || (ocrQueue.length === 0 ? "Run OCR to see raw text from images." : "No text for this item.")}
+              {llmResponse || (ocrQueue.length === 0 ? "—" : "No LLM response for this item.")}
             </p>
           </div>
           <div className="space-y-2">
@@ -517,48 +679,6 @@ export function BulkCreate() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-muted-foreground text-sm font-medium">Flip card</p>
-            <button
-              type="button"
-              onClick={() => setFlipped((f) => !f)}
-              className="relative h-[180px] w-full cursor-pointer [perspective:1000px]"
-              aria-label={flipped ? "Show question" : "Show answer"}
-            >
-              <div
-                className="relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d]"
-                style={{ transform: flipped ? "rotateY(180deg)" : undefined }}
-              >
-                <div
-                  className="absolute inset-0 flex flex-col rounded-xl border bg-card p-4 shadow-md [backface-visibility:hidden]"
-                  style={{ transform: "rotateY(0deg)" }}
-                >
-                  {hasProcessedText && editTitle.trim() ? (
-                    <p className="text-muted-foreground absolute left-3 top-3 text-xs font-medium">
-                      {editTitle.trim()}
-                    </p>
-                  ) : null}
-                  <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">
-                    {hasProcessedText ? editQuestion || "Question side" : "Question side"}
-                  </p>
-                </div>
-                <div
-                  className="absolute inset-0 flex flex-col rounded-xl border bg-muted p-4 shadow-md [backface-visibility:hidden]"
-                  style={{ transform: "rotateY(180deg)" }}
-                >
-                  {hasProcessedText && editTitle.trim() ? (
-                    <p className="text-muted-foreground absolute left-3 top-3 text-xs font-medium">
-                      {editTitle.trim()}
-                    </p>
-                  ) : null}
-                  <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">
-                    {hasProcessedText ? editAnswer || "Answer side" : "Answer side"}
-                  </p>
-                </div>
-              </div>
-            </button>
-            <p className="text-muted-foreground text-xs">Click to flip</p>
-          </div>
           <div className="flex gap-2">
             <Button
               type="button"
@@ -568,6 +688,14 @@ export function BulkCreate() {
               Save
             </Button>
             <Button type="button" variant="outline">Skip</Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!llmEnabled || !hasProcessedText || !rawTextRead.trim() || llmLoading}
+              onClick={handleRunLlm}
+            >
+              {llmLoading ? "Running…" : "Run LLM"}
+            </Button>
           </div>
         </CardContent>
       </Card>

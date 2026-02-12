@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 const NULL_SUB_COLLECTION_NAME: &str = "- None -";
 
@@ -686,6 +687,16 @@ fn extensions_for_format(format: &str) -> Vec<String> {
     }
 }
 
+#[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let _ = tx.send(folder.map(|p| p.to_string()));
+    });
+    rx.recv()
+        .map_err(|e| format!("Dialog channel error: {e}"))
+}
+
 /// Count files in a directory whose extension matches the given format (e.g. "png", "jpeg").
 #[tauri::command]
 fn count_files_in_directory(directory: String, format: String) -> Result<u32, String> {
@@ -751,10 +762,16 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+fn get_ollama_api_key() -> String {
+    std::env::var("OLLAMA_API_KEY").unwrap_or_default()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -766,7 +783,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, add_card, get_cards, get_collections, create_collection, get_sub_collections, create_sub_collection, update_card, delete_card, set_card_skipped, clear_skipped_for_collection, export_collection_to_path, export_collections_to_path, read_export_file, import_collection_from_file, import_collections_from_path, count_files_in_directory, list_files_in_directory, read_file_base64])
+        .invoke_handler(tauri::generate_handler![greet, get_ollama_api_key, add_card, get_cards, get_collections, create_collection, get_sub_collections, create_sub_collection, update_card, delete_card, set_card_skipped, clear_skipped_for_collection, export_collection_to_path, export_collections_to_path, read_export_file, import_collection_from_file, import_collections_from_path, pick_directory, count_files_in_directory, list_files_in_directory, read_file_base64])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

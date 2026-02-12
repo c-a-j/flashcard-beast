@@ -6,6 +6,7 @@ import { ImportExport } from "@/pages/ImportExport";
 import { CreateCards } from "@/pages/CreateCards";
 import { EditCards } from "@/pages/EditCards";
 import { Study } from "@/pages/Study";
+import { OllamaTest } from "@/pages/OllamaTest";
 
 function AppLayout() {
   const location = useLocation();
@@ -33,6 +34,9 @@ function AppLayout() {
               <TabsTrigger value="/study" asChild>
                 <Link to="/study">Study</Link>
               </TabsTrigger>
+              <TabsTrigger value="/ollama-test" asChild>
+                <Link to="/ollama-test">Ollama Test</Link>
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </nav>
@@ -47,6 +51,7 @@ function AppLayout() {
           <Route path="/create" element={<CreateCards />} />
           <Route path="/edit" element={<EditCards />} />
           <Route path="/study" element={<Study />} />
+          <Route path="/ollama-test" element={<OllamaTest />} />
         </Routes>
       </main>
     </div>
