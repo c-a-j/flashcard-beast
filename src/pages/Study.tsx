@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,15 @@ import {
 import { Label } from "@/components/ui/label";
 
 const SUB_COLLECTION_ALL = "__all__"; // Radix Select forbids SelectItem value=""
+
+function shuffle<T>(array: T[]): T[] {
+  const out = [...array];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 type StoredCard = { id: number; question: string; answer: string; title: string; skipped: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
@@ -122,6 +131,31 @@ export function Study() {
   );
   const currentCard = sessionCards[Math.min(currentIndex, sessionCards.length - 1)];
 
+  const handleNextRef = useRef(() => {});
+  const handlePreviousRef = useRef(() => {});
+  useEffect(() => {
+    if (sessionCards.length === 0) return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.closest("input, select, [role='listbox']")) return;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        handleNextRef.current();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        handlePreviousRef.current();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        setSkipChecked((s) => !s);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sessionCards.length]);
+
   async function handleNext() {
     setFlipped(false);
     setSkipChecked(false);
@@ -141,6 +175,14 @@ export function Study() {
       );
     }
   }
+  handleNextRef.current = handleNext;
+
+  function handlePrevious() {
+    setFlipped(false);
+    setSkipChecked(false);
+    setCurrentIndex((i) => (i <= 0 ? sessionCards.length - 1 : i - 1));
+  }
+  handlePreviousRef.current = handlePrevious;
 
   function handleRestart() {
     setFlipped(false);
@@ -148,9 +190,16 @@ export function Study() {
     setSkipChecked(false);
   }
 
+  function handleShuffle() {
+    setCards((prev) => shuffle(prev));
+    setCurrentIndex(0);
+    setFlipped(false);
+    setSkipChecked(false);
+  }
+
   if (loadingCollections) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardContent className="flex items-center justify-center py-12">
             <p className="text-muted-foreground text-sm">Loading…</p>
@@ -162,7 +211,7 @@ export function Study() {
 
   if (error) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardContent className="py-6">
             <p className="text-destructive text-sm">{error}</p>
@@ -174,7 +223,7 @@ export function Study() {
 
   if (collections.length === 0) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardHeader>
             <CardTitle>Study</CardTitle>
@@ -194,7 +243,7 @@ export function Study() {
 
   if (loadingCards) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardContent className="flex items-center justify-center py-12">
             <p className="text-muted-foreground text-sm">Loading cards…</p>
@@ -206,7 +255,7 @@ export function Study() {
 
   if (filteredCards.length === 0) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardHeader>
             <CardTitle>Study</CardTitle>
@@ -261,7 +310,7 @@ export function Study() {
 
   if (sessionCards.length === 0) {
     return (
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         <Card>
           <CardHeader>
             <CardTitle>Study</CardTitle>
@@ -313,7 +362,7 @@ export function Study() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
       <Card>
         <CardHeader>
           <CardTitle>Study</CardTitle>
@@ -413,12 +462,22 @@ export function Study() {
           </label>
 
           <div className="flex justify-between">
-            <Button variant="outline" onClick={handleRestart}>
-              Restart
-            </Button>
-            <Button onClick={handleNext}>
-              Next
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleRestart}>
+                Restart
+              </Button>
+              <Button variant="outline" onClick={handleShuffle}>
+                Shuffle
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handlePrevious}>
+                Previous
+              </Button>
+              <Button onClick={handleNext}>
+                Next
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
