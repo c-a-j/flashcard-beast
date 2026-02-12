@@ -51,7 +51,7 @@ fn init_db(conn: &rusqlite::Connection) -> Result<(), String> {
             answer TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             collection_id INTEGER NOT NULL REFERENCES collections(id),
-            title TEXT NOT NULL DEFAULT '',
+            hint TEXT NOT NULL DEFAULT '',
             skipped INTEGER NOT NULL DEFAULT 0,
             sub_collection_id INTEGER NOT NULL REFERENCES sub_collections(id)
         )",
@@ -73,20 +73,20 @@ fn add_card(
     question: String,
     answer: String,
     collection_id: i64,
-    title: Option<String>,
+    hint: Option<String>,
     sub_collection_id: Option<i64>,
 ) -> Result<(), String> {
     let path = db_path(&app)?;
     let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
     init_db(&conn)?;
-    let title = title.unwrap_or_default();
+    let hint = hint.unwrap_or_default();
     let sub_id = match sub_collection_id {
         Some(id) => id,
         None => get_null_sub_collection_id(&conn, collection_id)?,
     };
     conn.execute(
-        "INSERT INTO cards (question, answer, collection_id, title, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![question, answer, collection_id, title, sub_id],
+        "INSERT INTO cards (question, answer, collection_id, hint, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![question, answer, collection_id, hint, sub_id],
     )
     .map_err(|e| map_unique_constraint(e))?;
     Ok(())
@@ -215,7 +215,7 @@ struct StoredCard {
     id: i64,
     question: String,
     answer: String,
-    title: String,
+    hint: String,
     skipped: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     sub_collection_id: Option<i64>,
@@ -226,7 +226,8 @@ struct StoredCard {
 struct ExportCard {
     question: String,
     answer: String,
-    title: String,
+    #[serde(alias = "title")]
+    hint: String,
     /// Sub-collection name for this card; used on import to match/create sub-collections.
     #[serde(default)]
     sub_collection_name: Option<String>,
@@ -270,7 +271,7 @@ fn get_cards(app: tauri::AppHandle, collection_id: i64) -> Result<Vec<StoredCard
     let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
     init_db(&conn)?;
     let mut stmt = conn
-        .prepare("SELECT id, question, answer, COALESCE(title, ''), COALESCE(skipped, 0), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
+        .prepare("SELECT id, question, answer, COALESCE(hint, ''), COALESCE(skipped, 0), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(rusqlite::params![collection_id], |row| {
@@ -278,7 +279,7 @@ fn get_cards(app: tauri::AppHandle, collection_id: i64) -> Result<Vec<StoredCard
                 id: row.get(0)?,
                 question: row.get(1)?,
                 answer: row.get(2)?,
-                title: row.get(3)?,
+                hint: row.get(3)?,
                 skipped: row.get::<_, i64>(4)? != 0,
                 sub_collection_id: row.get::<_, Option<i64>>(5)?,
             })
@@ -298,20 +299,20 @@ fn update_card(
     question: String,
     answer: String,
     collection_id: i64,
-    title: Option<String>,
+    hint: Option<String>,
     sub_collection_id: Option<i64>,
 ) -> Result<(), String> {
     let path = db_path(&app)?;
     let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
     init_db(&conn)?;
-    let title = title.unwrap_or_default();
+    let hint = hint.unwrap_or_default();
     let sub_id = match sub_collection_id {
         Some(sid) => sid,
         None => get_null_sub_collection_id(&conn, collection_id)?,
     };
     conn.execute(
-        "UPDATE cards SET question = ?1, answer = ?2, collection_id = ?3, title = ?4, sub_collection_id = ?5 WHERE id = ?6",
-        rusqlite::params![question, answer, collection_id, title, sub_id, id],
+        "UPDATE cards SET question = ?1, answer = ?2, collection_id = ?3, hint = ?4, sub_collection_id = ?5 WHERE id = ?6",
+        rusqlite::params![question, answer, collection_id, hint, sub_id, id],
     )
     .map_err(|e| map_unique_constraint(e))?;
     Ok(())
@@ -381,7 +382,7 @@ fn export_collection_to_path(app: tauri::AppHandle, collection_id: i64, path: St
 
     let mut cards: Vec<ExportCard> = Vec::new();
     let mut card_stmt = conn
-        .prepare("SELECT question, answer, COALESCE(title, ''), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
+        .prepare("SELECT question, answer, COALESCE(hint, ''), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
         .map_err(|e| e.to_string())?;
     let card_rows = card_stmt
         .query_map(rusqlite::params![collection_id], |row| {
@@ -390,7 +391,7 @@ fn export_collection_to_path(app: tauri::AppHandle, collection_id: i64, path: St
             Ok(ExportCard {
                 question: row.get(0)?,
                 answer: row.get(1)?,
-                title: row.get(2)?,
+                hint: row.get(2)?,
                 sub_collection_name,
             })
         })
@@ -444,7 +445,7 @@ fn export_collections_to_path(app: tauri::AppHandle, path: String) -> Result<(),
 
         let mut cards: Vec<ExportCard> = Vec::new();
         let mut card_stmt = conn
-            .prepare("SELECT question, answer, COALESCE(title, ''), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
+            .prepare("SELECT question, answer, COALESCE(hint, ''), sub_collection_id FROM cards WHERE collection_id = ?1 ORDER BY id")
             .map_err(|e| e.to_string())?;
         let card_rows = card_stmt
             .query_map(rusqlite::params![coll_id], |row| {
@@ -453,7 +454,7 @@ fn export_collections_to_path(app: tauri::AppHandle, path: String) -> Result<(),
                 Ok(ExportCard {
                     question: row.get(0)?,
                     answer: row.get(1)?,
-                    title: row.get(2)?,
+                    hint: row.get(2)?,
                     sub_collection_name,
                 })
             })
@@ -589,8 +590,8 @@ fn import_collection_from_file(
             .unwrap_or(null_sub_id);
         let n = conn
             .execute(
-                "INSERT OR IGNORE INTO cards (question, answer, collection_id, title, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![question, answer, collection_id, card.title.trim(), sub_collection_id],
+                "INSERT OR IGNORE INTO cards (question, answer, collection_id, hint, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![question, answer, collection_id, card.hint.trim(), sub_collection_id],
             )
             .map_err(|e| e.to_string())?;
         cards_added += n as u32;
@@ -665,8 +666,8 @@ fn import_collections_from_path(app: tauri::AppHandle, path: String) -> Result<I
                 .unwrap_or(null_sub_id);
             let n = conn
                 .execute(
-                    "INSERT OR IGNORE INTO cards (question, answer, collection_id, title, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![question, answer, collection_id, card.title.trim(), sub_collection_id],
+                    "INSERT OR IGNORE INTO cards (question, answer, collection_id, hint, sub_collection_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![question, answer, collection_id, card.hint.trim(), sub_collection_id],
                 )
                 .map_err(|e| e.to_string())?;
             cards_added += n as u32;

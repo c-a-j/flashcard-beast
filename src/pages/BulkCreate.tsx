@@ -72,8 +72,8 @@ export function BulkCreate() {
   const [ocrProcessing, setOcrProcessing] = useState(false);
   /** Index into ocrQueue for the Card Preview (which item we're viewing/editing). */
   const [previewIndex, setPreviewIndex] = useState(0);
-  /** Editable title/question/answer for the current queue item (when tesseract text is available). */
-  const [editTitle, setEditTitle] = useState("");
+  /** Editable hint/question/answer for the current queue item (when tesseract text is available). */
+  const [editHint, setEditHint] = useState("");
   const [editQuestion, setEditQuestion] = useState("");
   const [editAnswer, setEditAnswer] = useState("");
   const [subCollections, setSubCollections] = useState<StoredSubCollection[]>([]);
@@ -91,7 +91,7 @@ export function BulkCreate() {
   const hasProcessedText = currentQueueItem != null;
 
   useEffect(() => {
-    setEditTitle("");
+    setEditHint("");
     setEditQuestion("");
     setEditAnswer("");
     setLlmResponse("");
@@ -120,7 +120,7 @@ export function BulkCreate() {
         question: q,
         answer: a,
         collectionId: collectionIdNum,
-        title: editTitle.trim() || undefined,
+        hint: editHint.trim() || undefined,
         subCollectionId: selectedSubCollectionId ? Number(selectedSubCollectionId) : undefined,
       });
       setOcrQueue((prev) => prev.filter((_, i) => i !== previewIndex));
@@ -568,12 +568,12 @@ export function BulkCreate() {
             </p>
           </div>
           <div className="space-y-2">
-            <p className="text-muted-foreground text-sm font-medium">Title</p>
+            <p className="text-muted-foreground text-sm font-medium">Hint</p>
             {hasProcessedText ? (
               <Input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="e.g. Chapter 1"
+                value={editHint}
+                onChange={(e) => setEditHint(e.target.value)}
+                placeholder="e.g. a short hint"
               />
             ) : (
               <p className="whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 text-sm">

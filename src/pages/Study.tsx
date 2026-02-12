@@ -22,7 +22,7 @@ function shuffle<T>(array: T[]): T[] {
   return out;
 }
 
-type StoredCard = { id: number; question: string; answer: string; title: string; skipped: boolean; sub_collection_id?: number | null };
+type StoredCard = { id: number; question: string; answer: string; hint: string; skipped: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
 type StoredSubCollection = { id: number; name: string; collection_id: number };
 
@@ -426,9 +426,9 @@ export function Study() {
                 className="absolute inset-0 flex flex-col rounded-xl border bg-card p-4 shadow-md [backface-visibility:hidden]"
                 style={{ transform: "rotateY(0deg)" }}
               >
-                {currentCard.title ? (
+                {currentCard.hint ? (
                   <p className="text-muted-foreground absolute left-3 top-3 text-xs font-medium">
-                    {currentCard.title}
+                    {currentCard.hint}
                   </p>
                 ) : null}
                 <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">
@@ -439,9 +439,9 @@ export function Study() {
                 className="absolute inset-0 flex flex-col rounded-xl border bg-muted p-4 shadow-md [backface-visibility:hidden]"
                 style={{ transform: "rotateY(180deg)" }}
               >
-                {currentCard.title ? (
+                {currentCard.hint ? (
                   <p className="text-muted-foreground absolute left-3 top-3 text-xs font-medium">
-                    {currentCard.title}
+                    {currentCard.hint}
                   </p>
                 ) : null}
                 <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">

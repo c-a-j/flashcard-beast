@@ -106,7 +106,7 @@ export function CreateCards() {
         question: q,
         answer: a,
         collectionId: cid,
-        title: title.trim() || undefined,
+        hint: title.trim() || undefined,
         subCollectionId: selectedSubCollectionId ? Number(selectedSubCollectionId) : undefined,
       });
       setTitle("");
@@ -297,10 +297,10 @@ export function CreateCards() {
             </div>
           </div>
           <div className="grid w-full gap-2">
-            <Label htmlFor="title">Title (optional)</Label>
+            <Label htmlFor="hint">Hint (optional)</Label>
             <Input
-              id="title"
-              placeholder="e.g. Chapter 1"
+              id="hint"
+              placeholder="e.g. A short hint"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />

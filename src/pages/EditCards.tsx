@@ -24,7 +24,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 
-type StoredCard = { id: number; question: string; answer: string; title: string; skipped?: boolean; sub_collection_id?: number | null };
+type StoredCard = { id: number; question: string; answer: string; hint: string; skipped?: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
 type StoredSubCollection = { id: number; name: string; collection_id: number };
 
@@ -35,7 +35,7 @@ export function EditCards() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<StoredCard | null>(null);
-  const [editTitle, setEditTitle] = useState("");
+  const [editHint, setEditHint] = useState("");
   const [editQuestion, setEditQuestion] = useState("");
   const [editAnswer, setEditAnswer] = useState("");
   const [editCollectionId, setEditCollectionId] = useState<string>("");
@@ -127,7 +127,7 @@ export function EditCards() {
 
   function openEdit(card: StoredCard) {
     setEditingCard(card);
-    setEditTitle(card.title ?? "");
+    setEditHint(card.hint ?? "");
     setEditQuestion(card.question);
     setEditAnswer(card.answer);
     setEditCollectionId(selectedCollectionId);
@@ -137,7 +137,7 @@ export function EditCards() {
 
   function closeEdit() {
     setEditingCard(null);
-    setEditTitle("");
+    setEditHint("");
     setEditQuestion("");
     setEditAnswer("");
     setEditCollectionId("");
@@ -162,7 +162,7 @@ export function EditCards() {
         question: editQuestion.trim(),
         answer: editAnswer.trim(),
         collectionId: cid,
-        title: editTitle.trim() || undefined,
+        hint: editHint.trim() || undefined,
         subCollectionId: editSubCollectionId ? Number(editSubCollectionId) : undefined,
       });
       const currentId = Number(selectedCollectionId);
@@ -172,7 +172,7 @@ export function EditCards() {
             c.id === editingCard.id
               ? {
                   ...c,
-                  title: editTitle.trim(),
+                  hint: editHint.trim(),
                   question: editQuestion.trim(),
                   answer: editAnswer.trim(),
                   sub_collection_id: editSubCollectionId ? Number(editSubCollectionId) : null,
@@ -202,7 +202,7 @@ export function EditCards() {
         question: editQuestion.trim(),
         answer: editAnswer.trim(),
         collectionId: cid,
-        title: editTitle.trim() || undefined,
+        hint: editHint.trim() || undefined,
         subCollectionId: editSubCollectionId ? Number(editSubCollectionId) : undefined,
       });
       closeEdit();
@@ -534,12 +534,12 @@ export function EditCards() {
               </Dialog>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-title">Title (optional)</Label>
+              <Label htmlFor="edit-hint">Hint (optional)</Label>
               <Input
-                id="edit-title"
-                placeholder="e.g. Chapter 1"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
+                id="edit-hint"
+                placeholder="e.g. A short hint"
+                value={editHint}
+                onChange={(e) => setEditHint(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
