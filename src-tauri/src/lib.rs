@@ -756,6 +756,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.show();
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![greet, add_card, get_cards, get_collections, create_collection, get_sub_collections, create_sub_collection, update_card, delete_card, set_card_skipped, clear_skipped_for_collection, export_collection_to_path, export_collections_to_path, read_export_file, import_collection_from_file, import_collections_from_path, count_files_in_directory, list_files_in_directory, read_file_base64])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

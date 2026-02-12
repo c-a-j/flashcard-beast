@@ -14,7 +14,10 @@
       {
         "title": "notecard-beast",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": false,
+        "label": "main",
+        "fullscreen": true
       }
     ],
     "security": {
@@ -22,8 +25,8 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": "all",
+    "active": false,
+    "targets": "rpm",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

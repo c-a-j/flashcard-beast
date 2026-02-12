@@ -1,5 +1,6 @@
 import { Link, Navigate, Route, BrowserRouter, Routes, useLocation } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { BulkCreate } from "@/pages/BulkCreate";
 import { ImportExport } from "@/pages/ImportExport";
 import { CreateCards } from "@/pages/CreateCards";
@@ -13,6 +14,7 @@ function AppLayout() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b bg-card px-6 py-4">
+        <div className="flex items-center justify-between gap-4">
         <nav className="flex items-center gap-2">
           <Tabs value={pathname}>
             <TabsList>
@@ -34,6 +36,8 @@ function AppLayout() {
             </TabsList>
           </Tabs>
         </nav>
+        <ThemeToggle />
+        </div>
       </header>
       <main className="flex-1">
         <Routes>
