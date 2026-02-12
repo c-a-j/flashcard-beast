@@ -16,9 +16,9 @@ export async function generateNotecard(
 ): Promise<Message> {
   const prefix = `I'm making notecards for studying. They should be in a
   question and answer format. The result should be provided in JSON format
-  {"question": "the question", "answer": "the answer"}. The question value should never
-  give away or contain the answer. Create one notecard with the following
-  information: `
+  {"question": "the question", "answer": "the answer"}. The question value
+  should never give away or contain the answer. Give me only the JSON object,
+  nothing else. Create one notecard with the following information: `
 
   const content = `${prefix}${data}`
 
@@ -42,6 +42,8 @@ export async function generateNotecard(
   const strippedContent = rawContent
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("```"))
+    .filter((line) => !line.trimStart().startsWith("["))
+    .filter((line) => !line.trimStart().startsWith("]"))
     .join("\n")
 
   return { ...response.message, content: strippedContent }

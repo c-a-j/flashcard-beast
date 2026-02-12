@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useBulkCreateSession } from "@/contexts/BulkCreateSessionContext";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,15 @@ const OLLAMA_HOSTS = {
 type StoredCollection = { id: number; name: string };
 type StoredSubCollection = { id: number; name: string; collection_id: number };
 
+type OcrQueueItem = {
+  path: string;
+  text: string;
+  llmResponse?: string;
+  llmQuestion?: string;
+  llmAnswer?: string;
+  llmStatus: "idle" | "running" | "done" | "error";
+};
+
 const BULK_IMAGE_FORMAT_MIME: Record<string, string> = {
   png: "image/png",
   jpeg: "image/jpeg",
@@ -63,13 +73,15 @@ export function BulkCreate() {
     }
   });
   const [llmEnabled, setLlmEnabled] = useState(true);
+  const [autorunEnabled, setAutorunEnabled] = useState(true);
   const [ollamaHost, setOllamaHost] = useState<"local" | "cloud">("local");
   const [model, setModel] = useState("glm-4.7-flash");
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [fileCountLoading, setFileCountLoading] = useState(false);
-  /** Queue of OCR results (path + text) for the Card Preview side to process later. */
-  const [ocrQueue, setOcrQueue] = useState<{ path: string; text: string }[]>([]);
+  /** Queue of OCR results (path + text + cached LLM results) for the Card Preview side. */
+  const [ocrQueue, setOcrQueue] = useState<OcrQueueItem[]>([]);
   const [ocrProcessing, setOcrProcessing] = useState(false);
+  const { sessionActive, setSessionActive } = useBulkCreateSession();
   /** Index into ocrQueue for the Card Preview (which item we're viewing/editing). */
   const [previewIndex, setPreviewIndex] = useState(0);
   /** Editable hint/question/answer for the current queue item (when tesseract text is available). */
@@ -86,16 +98,125 @@ export function BulkCreate() {
     ? ocrQueue[previewIndex]
     : null;
   const rawTextRead = currentQueueItem?.text ?? "";
-  const [llmResponse, setLlmResponse] = useState("");
-  const [llmLoading, setLlmLoading] = useState(false);
+  const llmResponse = currentQueueItem?.llmResponse ?? "";
+  const llmLoading = currentQueueItem?.llmStatus === "running";
   const hasProcessedText = currentQueueItem != null;
 
+  // Refs for stable access to LLM config inside async callbacks
+  const configRef = useRef({ ollamaHost, model, llmEnabled });
+  useEffect(() => {
+    configRef.current = { ollamaHost, model, llmEnabled };
+  }, [ollamaHost, model, llmEnabled]);
+
+  // Track which paths we've already kicked off LLM for (prevents double-starts from race conditions)
+  const llmStartedRef = useRef(new Set<string>());
+
+  // Track all file paths already in or processed through the queue (for new-file polling)
+  const knownPathsRef = useRef(new Set<string>());
+
+  // Core: run LLM for a specific queue item by path and store the result in the queue
+  const runLlmForPath = useCallback(async (path: string, text: string) => {
+    const { ollamaHost: host_, model: model_, llmEnabled: enabled } = configRef.current;
+    if (!enabled || !text.trim()) return;
+
+    setOcrQueue((prev) =>
+      prev.map((item) =>
+        item.path === path ? { ...item, llmStatus: "running" as const } : item
+      )
+    );
+
+    try {
+      const host = OLLAMA_HOSTS[host_];
+      const apiKey =
+        host_ === "cloud" ? await invoke<string>("get_ollama_api_key") : undefined;
+      const message = await generateNotecard(
+        text,
+        model_,
+        host,
+        apiKey ?? undefined,
+        host_ === "cloud" ? tauriFetch : undefined
+      );
+      const content = message.content ?? "";
+      const notecard = parseNotecard(content);
+      setOcrQueue((prev) =>
+        prev.map((item) =>
+          item.path === path
+            ? {
+                ...item,
+                llmStatus: "done" as const,
+                llmResponse: content,
+                llmQuestion: notecard.question,
+                llmAnswer: notecard.answer,
+              }
+            : item
+        )
+      );
+    } catch (e) {
+      const errorMsg = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      setOcrQueue((prev) =>
+        prev.map((item) =>
+          item.path === path
+            ? { ...item, llmStatus: "error" as const, llmResponse: errorMsg }
+            : item
+        )
+      );
+    }
+  }, []);
+
+  // Auto-run LLM for current card + look-ahead for upcoming cards.
+  // Local: sequential (one at a time, but keeps chaining ahead).
+  // Cloud: concurrent (current + next in parallel).
+  useEffect(() => {
+    if (!llmEnabled || !autorunEnabled) return;
+
+    const tryStart = (item: OcrQueueItem | undefined) => {
+      if (!item || item.llmStatus !== "idle" || !item.text.trim()) return;
+      if (llmStartedRef.current.has(item.path)) return;
+      llmStartedRef.current.add(item.path);
+      runLlmForPath(item.path, item.text);
+    };
+
+    if (ollamaHost === "local") {
+      // Sequential: only start the next idle card when nothing is in-flight
+      const anyRunning = ocrQueue.some((item) => item.llmStatus === "running");
+      if (!anyRunning) {
+        for (let i = previewIndex; i < ocrQueue.length; i++) {
+          const item = ocrQueue[i];
+          if (item.llmStatus === "idle" && item.text.trim() && !llmStartedRef.current.has(item.path)) {
+            llmStartedRef.current.add(item.path);
+            runLlmForPath(item.path, item.text);
+            break; // one at a time
+          }
+        }
+      }
+    } else {
+      // Cloud: run current + next concurrently
+      tryStart(ocrQueue[previewIndex]);
+      tryStart(ocrQueue[previewIndex + 1]);
+    }
+  }, [ocrQueue, previewIndex, llmEnabled, autorunEnabled, ollamaHost, runLlmForPath]);
+
+  // Reset hint when card identity changes
   useEffect(() => {
     setEditHint("");
-    setEditQuestion("");
-    setEditAnswer("");
-    setLlmResponse("");
   }, [previewIndex, currentQueueItem?.path]);
+
+  // Populate question/answer from cached LLM results (or clear while running)
+  useEffect(() => {
+    if (!currentQueueItem) {
+      setEditQuestion("");
+      setEditAnswer("");
+      return;
+    }
+
+    if (currentQueueItem.llmStatus === "done") {
+      setEditQuestion(currentQueueItem.llmQuestion ?? "");
+      setEditAnswer(currentQueueItem.llmAnswer ?? "");
+    } else {
+      setEditQuestion("");
+      setEditAnswer("");
+    }
+  }, [previewIndex, currentQueueItem?.path, currentQueueItem?.llmStatus]);
 
   useEffect(() => {
     try {
@@ -129,32 +250,17 @@ export function BulkCreate() {
     }
   }
 
-  async function handleRunLlm() {
-    const text = rawTextRead.trim();
-    if (!text || !llmEnabled) return;
-    setLlmLoading(true);
-    setLlmResponse("");
-    try {
-      const host = OLLAMA_HOSTS[ollamaHost];
-      const apiKey =
-        ollamaHost === "cloud" ? await invoke<string>("get_ollama_api_key") : undefined;
-      const message = await generateNotecard(
-        text,
-        model,
-        host,
-        apiKey ?? undefined,
-        ollamaHost === "cloud" ? tauriFetch : undefined
-      );
-      const content = message.content ?? "";
-      setLlmResponse(content);
-      const notecard = parseNotecard(content);
-      setEditQuestion(notecard.question);
-      setEditAnswer(notecard.answer);
-    } catch (e) {
-      setLlmResponse(`Error: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setLlmLoading(false);
-    }
+  function handleRunLlm() {
+    if (!currentQueueItem || !rawTextRead.trim() || !llmEnabled) return;
+    // Reset item so the look-ahead effect re-runs it
+    llmStartedRef.current.delete(currentQueueItem.path);
+    setOcrQueue((prev) =>
+      prev.map((item, i) =>
+        i === previewIndex
+          ? { ...item, llmStatus: "idle" as const, llmResponse: undefined, llmQuestion: undefined, llmAnswer: undefined }
+          : item
+      )
+    );
   }
 
   useEffect(() => {
@@ -262,13 +368,17 @@ export function BulkCreate() {
 
   async function handleCreateCards() {
     if (!selectedDirectory) return;
+    setSessionActive(true);
     setOcrProcessing(true);
     setOcrQueue([]);
+    knownPathsRef.current.clear();
     try {
       const paths = await invoke<string[]>("list_files_in_directory", {
         directory: selectedDirectory,
         format: bulkFileFormat,
       });
+      setFileCount(paths.length);
+      paths.forEach((p) => knownPathsRef.current.add(p));
       const mime = BULK_IMAGE_FORMAT_MIME[bulkFileFormat] ?? "image/png";
       const worker = await createWorker("eng");
       try {
@@ -277,9 +387,9 @@ export function BulkCreate() {
             const base64 = await invoke<string>("read_file_base64", { path });
             const dataUrl = `data:${mime};base64,${base64}`;
             const { data } = await worker.recognize(dataUrl);
-            setOcrQueue((prev) => [...prev, { path, text: data.text ?? "" }]);
+            setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
           } catch {
-            setOcrQueue((prev) => [...prev, { path, text: "" }]);
+            setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
           }
         }
       } finally {
@@ -320,6 +430,57 @@ export function BulkCreate() {
       cancelled = true;
     };
   }, [selectedDirectory, bulkFileFormat]);
+
+  // Poll the directory every 5 s for new files until the user clicks "Stop Creating Cards"
+  useEffect(() => {
+    if (!selectedDirectory || !sessionActive || ocrProcessing) return;
+
+    let active = true;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const paths = await invoke<string[]>("list_files_in_directory", {
+          directory: selectedDirectory,
+          format: bulkFileFormat,
+        });
+
+        if (active) setFileCount(paths.length);
+
+        const newPaths = paths.filter((p) => !knownPathsRef.current.has(p));
+        if (newPaths.length === 0 || !active) return;
+
+        newPaths.forEach((p) => knownPathsRef.current.add(p));
+
+        const mime = BULK_IMAGE_FORMAT_MIME[bulkFileFormat] ?? "image/png";
+        const worker = await createWorker("eng");
+        try {
+          for (const path of newPaths) {
+            if (!active) break;
+            try {
+              const base64 = await invoke<string>("read_file_base64", { path });
+              const dataUrl = `data:${mime};base64,${base64}`;
+              const { data } = await worker.recognize(dataUrl);
+              setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
+            } catch {
+              setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
+            }
+          }
+        } finally {
+          await worker.terminate();
+        }
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    const interval = setInterval(poll, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selectedDirectory, bulkFileFormat, sessionActive, ocrProcessing]);
 
   const fileCountMessage =
     !selectedDirectory
@@ -430,36 +591,72 @@ export function BulkCreate() {
           </div>
           <div className="grid w-full gap-2">
             <Label>LLM</Label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={llmEnabled}
-              onClick={() => setLlmEnabled((v) => !v)}
-              className="relative inline-flex h-9 w-[8.5rem] rounded-md border border-input bg-muted/50 p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <span
+            <div className="flex gap-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={llmEnabled}
+                onClick={() => setLlmEnabled((v) => !v)}
+                className="relative inline-flex h-9 w-[8.5rem] rounded-md border border-input bg-muted/50 p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 bottom-0.5 rounded-[4px] bg-background shadow-sm transition-all duration-200",
+                    llmEnabled ? "left-0.5 right-1/2" : "left-1/2 right-0.5"
+                  )}
+                />
+                <span
+                  className={cn(
+                    "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                    llmEnabled ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  LLM On
+                </span>
+                <span
+                  className={cn(
+                    "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                    !llmEnabled ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  LLM Off
+                </span>
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autorunEnabled}
+                disabled={!llmEnabled}
+                onClick={() => setAutorunEnabled((v) => !v)}
                 className={cn(
-                  "absolute top-0.5 bottom-0.5 rounded-[4px] bg-background shadow-sm transition-all duration-200",
-                  llmEnabled ? "left-0.5 right-1/2" : "left-1/2 right-0.5"
-                )}
-              />
-              <span
-                className={cn(
-                  "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
-                  llmEnabled ? "text-foreground" : "text-muted-foreground"
+                  "relative inline-flex h-9 w-[8.5rem] rounded-md border border-input bg-muted/50 p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  !llmEnabled && "cursor-not-allowed opacity-50"
                 )}
               >
-                LLM On
-              </span>
-              <span
-                className={cn(
-                  "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
-                  !llmEnabled ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                LLM Off
-              </span>
-            </button>
+                <span
+                  className={cn(
+                    "absolute top-0.5 bottom-0.5 rounded-[4px] bg-background shadow-sm transition-all duration-200",
+                    autorunEnabled ? "left-0.5 right-1/2" : "left-1/2 right-0.5"
+                  )}
+                />
+                <span
+                  className={cn(
+                    "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                    autorunEnabled && llmEnabled ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Auto On
+                </span>
+                <span
+                  className={cn(
+                    "relative z-10 flex flex-1 items-center justify-center text-sm font-medium transition-colors",
+                    !autorunEnabled && llmEnabled ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Auto Off
+                </span>
+              </button>
+            </div>
           </div>
           <div className="grid w-full gap-2">
             <Label>Ollama host</Label>
@@ -495,15 +692,19 @@ export function BulkCreate() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              variant={ocrQueue.length > 0 && !ocrProcessing ? "destructive" : "default"}
+              variant={sessionActive ? "destructive" : "default"}
               disabled={
-                ocrProcessing ||
-                (ocrQueue.length === 0 && (!selectedDirectory || fileCount === 0))
+                sessionActive
+                  ? ocrProcessing
+                  : ocrProcessing || !selectedDirectory
               }
               onClick={() => {
-                if (ocrQueue.length > 0 && !ocrProcessing) {
+                if (sessionActive) {
+                  setSessionActive(false);
                   setOcrQueue([]);
                   setPreviewIndex(0);
+                  llmStartedRef.current.clear();
+                  knownPathsRef.current.clear();
                 } else {
                   handleCreateCards();
                 }
@@ -511,11 +712,11 @@ export function BulkCreate() {
             >
               {ocrProcessing
                 ? "Running OCR…"
-                : ocrQueue.length > 0
+                : sessionActive
                   ? "Stop Creating Cards"
                   : "Create Cards"}
             </Button>
-            {fileCountMessage !== null && (
+            {sessionActive && fileCountMessage !== null && (
               <p className="text-muted-foreground text-sm">
                 {fileCountMessage}
               </p>
@@ -687,7 +888,16 @@ export function BulkCreate() {
             >
               Save
             </Button>
-            <Button type="button" variant="outline">Skip</Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!hasProcessedText}
+              onClick={() => {
+                setOcrQueue((prev) => prev.filter((_, i) => i !== previewIndex));
+              }}
+            >
+              Skip
+            </Button>
             <Button
               type="button"
               variant="outline"

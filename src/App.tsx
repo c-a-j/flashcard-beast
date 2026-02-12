@@ -1,6 +1,7 @@
 import { Link, Navigate, Route, BrowserRouter, Routes, useLocation } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BulkCreateSessionProvider, useBulkCreateSession } from "@/contexts/BulkCreateSessionContext";
 import { BulkCreate } from "@/pages/BulkCreate";
 import { ImportExport } from "@/pages/ImportExport";
 import { CreateCards } from "@/pages/CreateCards";
@@ -8,9 +9,35 @@ import { EditCards } from "@/pages/EditCards";
 import { Study } from "@/pages/Study";
 import { OllamaTest } from "@/pages/OllamaTest";
 
+function NavLink({
+  to,
+  value,
+  children,
+  disabled,
+}: {
+  to: string;
+  value: string;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  if (disabled) {
+    return (
+      <TabsTrigger value={value} disabled className="pointer-events-none cursor-not-allowed opacity-60">
+        {children}
+      </TabsTrigger>
+    );
+  }
+  return (
+    <TabsTrigger value={value} asChild>
+      <Link to={to}>{children}</Link>
+    </TabsTrigger>
+  );
+}
+
 function AppLayout() {
   const location = useLocation();
   const pathname = location.pathname === "/" ? "/bulk-create" : location.pathname;
+  const { sessionActive } = useBulkCreateSession();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -22,21 +49,21 @@ function AppLayout() {
               <TabsTrigger value="/bulk-create" asChild>
                 <Link to="/bulk-create">Bulk Create</Link>
               </TabsTrigger>
-              <TabsTrigger value="/import-export" asChild>
-                <Link to="/import-export">Import/Export</Link>
-              </TabsTrigger>
-              <TabsTrigger value="/create" asChild>
-                <Link to="/create">Create Cards</Link>
-              </TabsTrigger>
-              <TabsTrigger value="/edit" asChild>
-                <Link to="/edit">Edit Cards</Link>
-              </TabsTrigger>
-              <TabsTrigger value="/study" asChild>
-                <Link to="/study">Study</Link>
-              </TabsTrigger>
-              <TabsTrigger value="/ollama-test" asChild>
-                <Link to="/ollama-test">Ollama Test</Link>
-              </TabsTrigger>
+              <NavLink to="/import-export" value="/import-export" disabled={sessionActive}>
+                Import/Export
+              </NavLink>
+              <NavLink to="/create" value="/create" disabled={sessionActive}>
+                Create Cards
+              </NavLink>
+              <NavLink to="/edit" value="/edit" disabled={sessionActive}>
+                Edit Cards
+              </NavLink>
+              <NavLink to="/study" value="/study" disabled={sessionActive}>
+                Study
+              </NavLink>
+              <NavLink to="/ollama-test" value="/ollama-test" disabled={sessionActive}>
+                Ollama Test
+              </NavLink>
             </TabsList>
           </Tabs>
         </nav>
@@ -61,7 +88,9 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <BulkCreateSessionProvider>
+        <AppLayout />
+      </BulkCreateSessionProvider>
     </BrowserRouter>
   );
 }
