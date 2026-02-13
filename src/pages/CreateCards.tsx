@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -41,6 +41,7 @@ export function CreateCards() {
   const [newSubCollectionOpen, setNewSubCollectionOpen] = useState(false);
   const [newSubCollectionName, setNewSubCollectionName] = useState("");
   const [creatingSubCollection, setCreatingSubCollection] = useState(false);
+  const questionInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +114,7 @@ export function CreateCards() {
       setQuestion("");
       setAnswer("");
       setFlipped(false);
+      questionInputRef.current?.focus();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -161,6 +163,13 @@ export function CreateCards() {
   }
 
   const collectionIdNum = selectedCollectionId ? Number(selectedCollectionId) : collections[0]?.id;
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      handleAddCard();
+    }
+  }
 
   return (
     <div className="grid flex-1 grid-cols-1 gap-6 p-6 lg:grid-cols-2">
@@ -303,15 +312,18 @@ export function CreateCards() {
               placeholder="e.g. A short hint"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={handleKeyDown}
             />
           </div>
           <div className="grid w-full gap-2">
             <Label htmlFor="question">Question</Label>
             <Textarea
+              ref={questionInputRef}
               id="question"
               placeholder="Enter the question..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={handleKeyDown}
               rows={3}
               className="min-h-[4.5rem] resize-y"
             />
@@ -323,6 +335,7 @@ export function CreateCards() {
               placeholder="Enter the answer..."
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={handleKeyDown}
               rows={3}
               className="min-h-[4.5rem] resize-y"
             />
