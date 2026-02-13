@@ -49,6 +49,7 @@ export function EditCards() {
   const [addingCopy, setAddingCopy] = useState(false);
   const [clearingSkips, setClearingSkips] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -303,6 +304,17 @@ export function EditCards() {
     );
   }
 
+  const searchLower = searchQuery.trim().toLowerCase();
+  const filteredCards =
+    searchLower === ""
+      ? cards
+      : cards.filter(
+          (c) =>
+            c.question.toLowerCase().includes(searchLower) ||
+            c.answer.toLowerCase().includes(searchLower) ||
+            (c.hint ?? "").toLowerCase().includes(searchLower)
+        );
+
   if (collections.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-6 p-6">
@@ -324,16 +336,16 @@ export function EditCards() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Edit Cards</CardTitle>
-          <CardDescription>
-            Edit or delete notecards in a collection.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden p-6">
+      {/* Header area — always visible */}
+      <div className="shrink-0 pb-4">
+        <h2 className="text-2xl font-semibold tracking-tight">Edit Cards</h2>
+        <p className="text-muted-foreground text-sm">
+          Edit or delete notecards in a collection.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <div className="flex items-end gap-2">
             <div className="grid w-full max-w-xs gap-2">
               <Label>Collection</Label>
               <Select value={selectedCollectionId} onValueChange={setSelectedCollectionId}>
@@ -358,65 +370,83 @@ export function EditCards() {
               {clearingSkips ? "Clearing…" : "Clear All Skips"}
             </Button>
           </div>
+          <div className="grid w-full max-w-xs gap-2">
+            <Label htmlFor="edit-cards-search">Search Cards</Label>
+            <Input
+              id="edit-cards-search"
+              type="search"
+              placeholder="Search question, answer, or hint…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
+        </div>
 
-          {error && (
-            <p className="text-destructive text-sm">{error}</p>
-          )}
+        {error && (
+          <p className="mt-2 text-destructive text-sm">{error}</p>
+        )}
+      </div>
 
-          {loading ? (
-            <p className="text-muted-foreground text-sm">Loading cards…</p>
-          ) : cards.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              No cards in this collection.
-            </p>
-          ) : (
-            <ScrollArea className="h-[400px] rounded-md border">
-              <ul className="flex flex-col gap-2 p-2">
-                {cards.map((card) => (
-                  <li
-                    key={card.id}
-                    className="flex flex-col gap-2 rounded-lg border bg-card p-3"
-                  >
-                    <p className="line-clamp-2 text-sm font-medium">{card.question}</p>
-                    <p className="line-clamp-1 text-muted-foreground text-xs">
-                      {card.answer}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEdit(card)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(card)}
-                      >
-                        Delete
-                      </Button>
-                      <label className="flex cursor-pointer items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={card.skipped ?? false}
-                          onChange={(e) =>
-                            handleSkipChange(card, e.target.checked)
-                          }
-                          className="h-4 w-4 rounded border-input"
-                        />
-                        <span>Skip</span>
-                      </label>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          )}
-        </CardContent>
-      </Card>
+      {/* Card list — fills remaining space, scrolls internally */}
+      <div className="min-h-0 flex-1">
+        {loading ? (
+          <p className="text-muted-foreground text-sm">Loading cards…</p>
+        ) : cards.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No cards in this collection.
+          </p>
+        ) : filteredCards.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No cards match &quot;{searchQuery.trim()}&quot;.
+          </p>
+        ) : (
+          <ScrollArea className="h-full rounded-md border">
+            <ul className="flex flex-col gap-2 p-2">
+              {filteredCards.map((card) => (
+                <li
+                  key={card.id}
+                  className="flex flex-col gap-2 rounded-lg border bg-card p-3"
+                >
+                  <p className="line-clamp-2 text-sm font-medium">{card.question}</p>
+                  <p className="line-clamp-1 text-muted-foreground text-xs">
+                    {card.answer}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEdit(card)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(card)}
+                    >
+                      Delete
+                    </Button>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={card.skipped ?? false}
+                        onChange={(e) =>
+                          handleSkipChange(card, e.target.checked)
+                        }
+                        className="h-4 w-4 rounded border-input"
+                      />
+                      <span>Skip</span>
+                    </label>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
+        )}
+      </div>
 
       <Dialog open={!!editingCard} onOpenChange={(open) => !open && closeEdit()}>
         <DialogContent className="sm:max-w-lg">

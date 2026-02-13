@@ -40,8 +40,8 @@ function AppLayout() {
   const { sessionActive } = useBulkCreateSession();
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b bg-card px-6 py-4">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <header className="shrink-0 border-b bg-card px-6 py-4">
         <div className="flex items-center justify-between gap-4">
         <nav className="flex items-center gap-2">
           <Tabs value={pathname}>
@@ -70,7 +70,7 @@ function AppLayout() {
         <ThemeToggle />
         </div>
       </header>
-      <main className="flex-1">
+      <main className="flex min-h-0 flex-1 flex-col overflow-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/bulk-create" replace />} />
           <Route path="/bulk-create" element={<BulkCreate />} />
