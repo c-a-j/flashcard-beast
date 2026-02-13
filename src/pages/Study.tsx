@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Pencil } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +11,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 const SUB_COLLECTION_ALL = "__all__"; // Radix Select forbids SelectItem value=""
 
@@ -38,6 +49,13 @@ export function Study() {
   const [loadingCollections, setLoadingCollections] = useState(true);
   const [loadingCards, setLoadingCards] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingCard, setEditingCard] = useState<StoredCard | null>(null);
+  const [editHint, setEditHint] = useState("");
+  const [editQuestion, setEditQuestion] = useState("");
+  const [editAnswer, setEditAnswer] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editSaveAction, setEditSaveAction] = useState<"overwrite" | "copy">("overwrite");
+  const [modalError, setModalError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +213,73 @@ export function Study() {
     setCurrentIndex(0);
     setFlipped(false);
     setSkipChecked(false);
+  }
+
+  function openEdit(card: StoredCard) {
+    setEditingCard(card);
+    setEditHint(card.hint ?? "");
+    setEditQuestion(card.question);
+    setEditAnswer(card.answer);
+    setModalError(null);
+  }
+
+  function closeEdit() {
+    setEditingCard(null);
+    setEditHint("");
+    setEditQuestion("");
+    setEditAnswer("");
+    setEditSaveAction("overwrite");
+    setModalError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editingCard) return;
+    const q = editQuestion.trim();
+    const a = editAnswer.trim();
+    if (!q || !a) return;
+    setModalError(null);
+    setSaving(true);
+    try {
+      if (editSaveAction === "copy") {
+        await invoke("add_card", {
+          question: a,
+          answer: q,
+          collectionId: Number(selectedCollectionId),
+          hint: editHint.trim() || undefined,
+          subCollectionId: editingCard.sub_collection_id ?? undefined,
+        });
+        const data = await invoke<StoredCard[]>("get_cards", {
+          collectionId: Number(selectedCollectionId),
+        });
+        setCards(data);
+      } else {
+        await invoke("update_card", {
+          id: editingCard.id,
+          question: q,
+          answer: a,
+          collectionId: Number(selectedCollectionId),
+          hint: editHint.trim() || undefined,
+          subCollectionId: editingCard.sub_collection_id ?? undefined,
+        });
+        setCards((prev) =>
+          prev.map((c) =>
+            c.id === editingCard.id
+              ? {
+                  ...c,
+                  hint: editHint.trim(),
+                  question: q,
+                  answer: a,
+                }
+              : c
+          )
+        );
+      }
+      closeEdit();
+    } catch (e) {
+      setModalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loadingCollections) {
@@ -431,6 +516,19 @@ export function Study() {
                     {currentCard.hint}
                   </p>
                 ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-3 top-3 size-8 shrink-0"
+                  aria-label="Edit card"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(currentCard);
+                  }}
+                >
+                  <Pencil className="size-4" />
+                </Button>
                 <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">
                   {currentCard.question}
                 </p>
@@ -444,6 +542,19 @@ export function Study() {
                     {currentCard.hint}
                   </p>
                 ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-3 top-3 size-8 shrink-0"
+                  aria-label="Edit card"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(currentCard);
+                  }}
+                >
+                  <Pencil className="size-4" />
+                </Button>
                 <p className="whitespace-pre-wrap break-words text-center text-sm flex-1 flex items-center justify-center">
                   {currentCard.answer}
                 </p>
@@ -481,6 +592,102 @@ export function Study() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!editingCard} onOpenChange={(open) => !open && closeEdit()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit card</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div
+              className="flex h-8 rounded-md border bg-muted/30 p-0.5"
+              role="group"
+              aria-label="Save as overwrite existing or make new card"
+            >
+              <button
+                type="button"
+                onClick={() => setEditSaveAction("overwrite")}
+                className={cn(
+                  "flex-1 rounded-sm px-3 text-sm font-medium transition-colors",
+                  editSaveAction === "overwrite"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Overwrite Existing
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditSaveAction("copy")}
+                className={cn(
+                  "flex-1 rounded-sm px-3 text-sm font-medium transition-colors",
+                  editSaveAction === "copy"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Make New Card
+              </button>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="study-edit-hint">Hint (optional)</Label>
+              <Input
+                id="study-edit-hint"
+                placeholder="e.g. A short hint"
+                value={editHint}
+                onChange={(e) => setEditHint(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="study-edit-question">Question</Label>
+              <Textarea
+                id="study-edit-question"
+                value={editQuestion}
+                onChange={(e) => setEditQuestion(e.target.value)}
+                rows={3}
+                className="min-h-[4.5rem] resize-y"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="study-edit-answer">Answer</Label>
+              <Textarea
+                id="study-edit-answer"
+                value={editAnswer}
+                onChange={(e) => setEditAnswer(e.target.value)}
+                rows={3}
+                className="min-h-[4.5rem] resize-y"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                setEditQuestion(editAnswer);
+                setEditAnswer(editQuestion);
+              }}
+            >
+              Flip Q and A
+            </Button>
+          </div>
+          {modalError && (
+            <p className="text-destructive text-sm">{modalError}</p>
+          )}
+          <DialogFooter className="sm:justify-center">
+            <Button type="button" variant="outline" onClick={closeEdit}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!editQuestion.trim() || !editAnswer.trim() || saving}
+              onClick={handleSaveEdit}
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
