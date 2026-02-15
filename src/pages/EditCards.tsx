@@ -24,6 +24,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 
+const SUB_COLLECTION_ALL = "__all__";
+
 type StoredCard = { id: number; question: string; answer: string; hint: string; skipped?: boolean; sub_collection_id?: number | null };
 type StoredCollection = { id: number; name: string };
 type StoredSubCollection = { id: number; name: string; collection_id: number };
@@ -31,6 +33,8 @@ type StoredSubCollection = { id: number; name: string; collection_id: number };
 export function EditCards() {
   const [collections, setCollections] = useState<StoredCollection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
+  const [subCollections, setSubCollections] = useState<StoredSubCollection[]>([]);
+  const [selectedSubCollectionId, setSelectedSubCollectionId] = useState<string>(SUB_COLLECTION_ALL);
   const [cards, setCards] = useState<StoredCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +54,17 @@ export function EditCards() {
   const [clearingSkips, setClearingSkips] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [editCollectionModalOpen, setEditCollectionModalOpen] = useState(false);
+  const [editCollectionName, setEditCollectionName] = useState("");
+  const [editCollectionSaving, setEditCollectionSaving] = useState(false);
+  const [editCollectionDeleting, setEditCollectionDeleting] = useState(false);
+  const [editCollectionError, setEditCollectionError] = useState<string | null>(null);
+  const [editSubCollectionModalOpen, setEditSubCollectionModalOpen] = useState(false);
+  const [editingSubCollectionId, setEditingSubCollectionId] = useState<string | null>(null);
+  const [editSubCollectionName, setEditSubCollectionName] = useState("");
+  const [editSubCollectionSaving, setEditSubCollectionSaving] = useState(false);
+  const [editSubCollectionDeleting, setEditSubCollectionDeleting] = useState(false);
+  const [editSubCollectionError, setEditSubCollectionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +105,28 @@ export function EditCards() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCollectionId]);
+
+  useEffect(() => {
+    if (!selectedCollectionId) {
+      setSubCollections([]);
+      setSelectedSubCollectionId(SUB_COLLECTION_ALL);
+      return;
+    }
+    let cancelled = false;
+    invoke<StoredSubCollection[]>("get_sub_collections", {
+      collectionId: Number(selectedCollectionId),
+    })
+      .then((data) => {
+        if (!cancelled) setSubCollections(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSubCollections([]);
+      });
+    setSelectedSubCollectionId(SUB_COLLECTION_ALL);
     return () => {
       cancelled = true;
     };
@@ -280,6 +317,142 @@ export function EditCards() {
     }
   }
 
+  function openEditCollectionModal() {
+    const coll = collections.find((c) => String(c.id) === selectedCollectionId);
+    if (coll) {
+      setEditCollectionName(coll.name);
+      setEditCollectionError(null);
+      setEditCollectionModalOpen(true);
+    }
+  }
+
+  function closeEditCollectionModal() {
+    setEditCollectionModalOpen(false);
+    setEditCollectionName("");
+    setEditCollectionError(null);
+  }
+
+  async function handleSaveCollectionName() {
+    if (!selectedCollectionId) return;
+    const name = editCollectionName.trim();
+    if (!name) return;
+    setEditCollectionSaving(true);
+    setEditCollectionError(null);
+    try {
+      await invoke("update_collection", {
+        id: Number(selectedCollectionId),
+        name,
+      });
+      const data = await invoke<StoredCollection[]>("get_collections");
+      setCollections(data);
+      closeEditCollectionModal();
+    } catch (e) {
+      setEditCollectionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditCollectionSaving(false);
+    }
+  }
+
+  async function handleDeleteCollection() {
+    if (!selectedCollectionId) return;
+    if (
+      !confirm(
+        "Delete this collection and all its cards? This cannot be undone."
+      )
+    )
+      return;
+    setEditCollectionDeleting(true);
+    setEditCollectionError(null);
+    try {
+      await invoke("delete_collection", { id: Number(selectedCollectionId) });
+      const data = await invoke<StoredCollection[]>("get_collections");
+      setCollections(data);
+      setCards([]);
+      setSelectedCollectionId(data[0] ? String(data[0].id) : "");
+      closeEditCollectionModal();
+    } catch (e) {
+      setEditCollectionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditCollectionDeleting(false);
+    }
+  }
+
+  const selectedSubCollection = subCollections.find(
+    (s) => String(s.id) === selectedSubCollectionId
+  );
+  const canEditSubCollection =
+    selectedSubCollection &&
+    selectedSubCollection.name !== "- None -";
+
+  function openEditSubCollectionModal() {
+    if (!canEditSubCollection) return;
+    setEditingSubCollectionId(selectedSubCollectionId);
+    setEditSubCollectionName(selectedSubCollection!.name);
+    setEditSubCollectionError(null);
+    setEditSubCollectionModalOpen(true);
+  }
+
+  function closeEditSubCollectionModal() {
+    setEditSubCollectionModalOpen(false);
+    setEditingSubCollectionId(null);
+    setEditSubCollectionName("");
+    setEditSubCollectionError(null);
+  }
+
+  async function handleSaveSubCollectionName() {
+    if (!editingSubCollectionId) return;
+    const name = editSubCollectionName.trim();
+    if (!name) return;
+    setEditSubCollectionSaving(true);
+    setEditSubCollectionError(null);
+    try {
+      await invoke("update_sub_collection", {
+        id: Number(editingSubCollectionId),
+        name,
+      });
+      const data = await invoke<StoredSubCollection[]>("get_sub_collections", {
+        collectionId: Number(selectedCollectionId),
+      });
+      setSubCollections(data);
+      closeEditSubCollectionModal();
+    } catch (e) {
+      setEditSubCollectionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditSubCollectionSaving(false);
+    }
+  }
+
+  async function handleDeleteSubCollection() {
+    if (!editingSubCollectionId) return;
+    if (
+      !confirm(
+        "Delete this sub collection? Its cards will be moved to the default (None) sub collection."
+      )
+    )
+      return;
+    setEditSubCollectionDeleting(true);
+    setEditSubCollectionError(null);
+    try {
+      await invoke("delete_sub_collection", { id: Number(editingSubCollectionId) });
+      const [subData, cardsData] = await Promise.all([
+        invoke<StoredSubCollection[]>("get_sub_collections", {
+          collectionId: Number(selectedCollectionId),
+        }),
+        invoke<StoredCard[]>("get_cards", {
+          collectionId: Number(selectedCollectionId),
+        }),
+      ]);
+      setSubCollections(subData);
+      setCards(cardsData);
+      setSelectedSubCollectionId(SUB_COLLECTION_ALL);
+      closeEditSubCollectionModal();
+    } catch (e) {
+      setEditSubCollectionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditSubCollectionDeleting(false);
+    }
+  }
+
   if (loading && collections.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-6 p-6">
@@ -304,11 +477,19 @@ export function EditCards() {
     );
   }
 
+  const cardsInSub =
+    selectedSubCollectionId === SUB_COLLECTION_ALL
+      ? cards
+      : cards.filter(
+          (c) =>
+            c.sub_collection_id != null &&
+            c.sub_collection_id === Number(selectedSubCollectionId)
+        );
   const searchLower = searchQuery.trim().toLowerCase();
   const filteredCards =
     searchLower === ""
-      ? cards
-      : cards.filter(
+      ? cardsInSub
+      : cardsInSub.filter(
           (c) =>
             c.question.toLowerCase().includes(searchLower) ||
             c.answer.toLowerCase().includes(searchLower) ||
@@ -345,11 +526,11 @@ export function EditCards() {
         </p>
 
         <div className="mt-4 flex flex-wrap items-end gap-4">
-          <div className="flex items-end gap-2">
-            <div className="grid w-full max-w-xs gap-2">
+          <div className="flex flex-none items-end gap-2">
+            <div className="grid w-48 shrink-0 gap-2">
               <Label>Collection</Label>
               <Select value={selectedCollectionId} onValueChange={setSelectedCollectionId}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -364,8 +545,47 @@ export function EditCards() {
             <Button
               type="button"
               variant="outline"
+              onClick={openEditCollectionModal}
+              disabled={!selectedCollectionId}
+              className="shrink-0"
+            >
+              Edit Collection
+            </Button>
+            <div className="grid w-40 shrink-0 gap-2">
+              <Label>Sub Collection</Label>
+              <Select
+                value={selectedSubCollectionId}
+                onValueChange={setSelectedSubCollectionId}
+                disabled={!selectedCollectionId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SUB_COLLECTION_ALL}>All</SelectItem>
+                  {subCollections.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openEditSubCollectionModal}
+              disabled={!canEditSubCollection}
+              className="shrink-0"
+            >
+              Edit Sub Collection
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={handleClearAllSkips}
               disabled={!selectedCollectionId || clearingSkips}
+              className="shrink-0"
             >
               {clearingSkips ? "Clearing…" : "Clear All Skips"}
             </Button>
@@ -615,6 +835,124 @@ export function EditCards() {
               }
             >
               {saving || addingCopy ? "Accepting…" : "Accept"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editCollectionModalOpen}
+        onOpenChange={(open) => !open && closeEditCollectionModal()}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Collection</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-collection-name">Name</Label>
+              <Input
+                id="edit-collection-name"
+                value={editCollectionName}
+                onChange={(e) => setEditCollectionName(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && handleSaveCollectionName()
+                }
+                placeholder="Collection name"
+              />
+            </div>
+            {editCollectionError && (
+              <p className="text-destructive text-sm">{editCollectionError}</p>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between sm:flex-row-reverse">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeEditCollectionModal}
+                disabled={editCollectionSaving || editCollectionDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  !editCollectionName.trim() ||
+                  editCollectionSaving ||
+                  editCollectionDeleting
+                }
+                onClick={handleSaveCollectionName}
+              >
+                {editCollectionSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteCollection}
+              disabled={editCollectionSaving || editCollectionDeleting}
+            >
+              {editCollectionDeleting ? "Deleting…" : "Delete Collection"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editSubCollectionModalOpen}
+        onOpenChange={(open) => !open && closeEditSubCollectionModal()}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Sub Collection</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-sub-collection-name">Name</Label>
+              <Input
+                id="edit-sub-collection-name"
+                value={editSubCollectionName}
+                onChange={(e) => setEditSubCollectionName(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && handleSaveSubCollectionName()
+                }
+                placeholder="Sub collection name"
+              />
+            </div>
+            {editSubCollectionError && (
+              <p className="text-destructive text-sm">{editSubCollectionError}</p>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between sm:flex-row-reverse">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeEditSubCollectionModal}
+                disabled={editSubCollectionSaving || editSubCollectionDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  !editSubCollectionName.trim() ||
+                  editSubCollectionSaving ||
+                  editSubCollectionDeleting
+                }
+                onClick={handleSaveSubCollectionName}
+              >
+                {editSubCollectionSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteSubCollection}
+              disabled={editSubCollectionSaving || editSubCollectionDeleting}
+            >
+              {editSubCollectionDeleting ? "Deleting…" : "Delete Sub Collection"}
             </Button>
           </DialogFooter>
         </DialogContent>

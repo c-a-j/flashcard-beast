@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 const SUB_COLLECTION_ALL = "__all__"; // Radix Select forbids SelectItem value=""
+const SUB_COLLECTION_NONE = "__none__"; // No sub-collection in edit modal
 
 function shuffle<T>(array: T[]): T[] {
   const out = [...array];
@@ -50,6 +51,7 @@ export function Study() {
   const [loadingCards, setLoadingCards] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<StoredCard | null>(null);
+  const [editSubCollectionId, setEditSubCollectionId] = useState<string>(SUB_COLLECTION_NONE);
   const [editHint, setEditHint] = useState("");
   const [editQuestion, setEditQuestion] = useState("");
   const [editAnswer, setEditAnswer] = useState("");
@@ -154,8 +156,9 @@ export function Study() {
   useEffect(() => {
     if (sessionCards.length === 0) return;
     function onKeyDown(e: KeyboardEvent) {
+      if (editingCard) return;
       const target = e.target as HTMLElement;
-      if (target.closest("input, select, [role='listbox']")) return;
+      if (target.closest("input, textarea, select, [role='listbox']")) return;
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         setFlipped((f) => !f);
@@ -172,7 +175,7 @@ export function Study() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [sessionCards.length]);
+  }, [sessionCards.length, editingCard]);
 
   async function handleNext() {
     setFlipped(false);
@@ -217,6 +220,9 @@ export function Study() {
 
   function openEdit(card: StoredCard) {
     setEditingCard(card);
+    const sub = subCollections.find((s) => s.id === card.sub_collection_id);
+    const isNone = card.sub_collection_id == null || sub?.name === "- None -";
+    setEditSubCollectionId(isNone ? SUB_COLLECTION_NONE : String(card.sub_collection_id!));
     setEditHint(card.hint ?? "");
     setEditQuestion(card.question);
     setEditAnswer(card.answer);
@@ -225,6 +231,7 @@ export function Study() {
 
   function closeEdit() {
     setEditingCard(null);
+    setEditSubCollectionId(SUB_COLLECTION_NONE);
     setEditHint("");
     setEditQuestion("");
     setEditAnswer("");
@@ -246,7 +253,10 @@ export function Study() {
           answer: q,
           collectionId: Number(selectedCollectionId),
           hint: editHint.trim() || undefined,
-          subCollectionId: editingCard.sub_collection_id ?? undefined,
+          subCollectionId:
+            editSubCollectionId && editSubCollectionId !== SUB_COLLECTION_NONE
+              ? Number(editSubCollectionId)
+              : undefined,
         });
         const data = await invoke<StoredCard[]>("get_cards", {
           collectionId: Number(selectedCollectionId),
@@ -259,8 +269,15 @@ export function Study() {
           answer: a,
           collectionId: Number(selectedCollectionId),
           hint: editHint.trim() || undefined,
-          subCollectionId: editingCard.sub_collection_id ?? undefined,
+          subCollectionId:
+            editSubCollectionId && editSubCollectionId !== SUB_COLLECTION_NONE
+              ? Number(editSubCollectionId)
+              : undefined,
         });
+        const newSubId =
+          editSubCollectionId && editSubCollectionId !== SUB_COLLECTION_NONE
+            ? Number(editSubCollectionId)
+            : null;
         setCards((prev) =>
           prev.map((c) =>
             c.id === editingCard.id
@@ -269,6 +286,7 @@ export function Study() {
                   hint: editHint.trim(),
                   question: q,
                   answer: a,
+                  sub_collection_id: newSubId,
                 }
               : c
           )
@@ -628,6 +646,28 @@ export function Study() {
               >
                 Make New Card
               </button>
+            </div>
+            <div className="grid gap-2">
+              <Label>Sub Collection</Label>
+              <Select
+                value={editSubCollectionId}
+                onValueChange={setEditSubCollectionId}
+                disabled={!selectedCollectionId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SUB_COLLECTION_NONE}>None</SelectItem>
+                  {subCollections
+                    .filter((s) => s.name !== "- None -")
+                    .map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="study-edit-hint">Hint (optional)</Label>

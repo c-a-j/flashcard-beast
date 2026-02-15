@@ -23,9 +23,6 @@ fn init_db(conn: &rusqlite::Connection) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    conn.execute("INSERT OR IGNORE INTO collections (name) VALUES ('Default')", [])
-        .map_err(|e| e.to_string())?;
-
     conn.execute(
         "CREATE TABLE IF NOT EXISTS sub_collections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,12 +32,6 @@ fn init_db(conn: &rusqlite::Connection) -> Result<(), String> {
             UNIQUE(collection_id, name)
         )",
         [],
-    )
-    .map_err(|e| e.to_string())?;
-
-    conn.execute(
-        "INSERT OR IGNORE INTO sub_collections (name, collection_id) VALUES (?1, 1)",
-        rusqlite::params![NULL_SUB_COLLECTION_NAME],
     )
     .map_err(|e| e.to_string())?;
 
@@ -144,6 +135,44 @@ fn create_collection(app: tauri::AppHandle, name: String) -> Result<StoredCollec
     })
 }
 
+#[tauri::command]
+fn update_collection(app: tauri::AppHandle, id: i64, name: String) -> Result<StoredCollection, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Collection name cannot be empty".to_string());
+    }
+    let path = db_path(&app)?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+    init_db(&conn)?;
+    conn.execute("UPDATE collections SET name = ?1 WHERE id = ?2", rusqlite::params![name, id])
+        .map_err(|e| e.to_string())?;
+    if conn.changes() == 0 {
+        return Err("Collection not found".to_string());
+    }
+    Ok(StoredCollection { id, name: name.to_string() })
+}
+
+#[tauri::command]
+fn delete_collection(app: tauri::AppHandle, id: i64) -> Result<(), String> {
+    let path = db_path(&app)?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+    init_db(&conn)?;
+    // Delete cards that reference any sub_collection of this collection first (required for FK if enabled).
+    conn.execute(
+        "DELETE FROM cards WHERE sub_collection_id IN (SELECT id FROM sub_collections WHERE collection_id = ?1)",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM sub_collections WHERE collection_id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM collections WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    if conn.changes() == 0 {
+        return Err("Collection not found".to_string());
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct StoredSubCollection {
     id: i64,
@@ -208,6 +237,56 @@ fn create_sub_collection(app: tauri::AppHandle, collection_id: i64, name: String
         name: name.to_string(),
         collection_id,
     })
+}
+
+#[tauri::command]
+fn update_sub_collection(app: tauri::AppHandle, id: i64, name: String) -> Result<StoredSubCollection, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Sub collection name cannot be empty".to_string());
+    }
+    if name.eq_ignore_ascii_case(NULL_SUB_COLLECTION_NAME) {
+        return Err("That name is reserved for internal use.".to_string());
+    }
+    let path = db_path(&app)?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+    init_db(&conn)?;
+    let collection_id: i64 = conn
+        .query_row("SELECT collection_id FROM sub_collections WHERE id = ?1", rusqlite::params![id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sub_collections SET name = ?1 WHERE id = ?2",
+        rusqlite::params![name, id],
+    )
+    .map_err(|e| map_unique_constraint(e))?;
+    Ok(StoredSubCollection {
+        id,
+        name: name.to_string(),
+        collection_id,
+    })
+}
+
+#[tauri::command]
+fn delete_sub_collection(app: tauri::AppHandle, id: i64) -> Result<(), String> {
+    let path = db_path(&app)?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+    init_db(&conn)?;
+    let (collection_id, name): (i64, String) = conn
+        .query_row(
+            "SELECT collection_id, name FROM sub_collections WHERE id = ?1",
+            rusqlite::params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    if name == NULL_SUB_COLLECTION_NAME {
+        return Err("The default sub collection cannot be deleted.".to_string());
+    }
+    let null_id = get_null_sub_collection_id(&conn, collection_id)?;
+    conn.execute("UPDATE cards SET sub_collection_id = ?1 WHERE sub_collection_id = ?2", rusqlite::params![null_id, id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM sub_collections WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -768,6 +847,14 @@ fn get_ollama_api_key() -> String {
     std::env::var("OLLAMA_API_KEY").unwrap_or_default()
 }
 
+#[tauri::command]
+fn get_app_name(app: tauri::AppHandle) -> String {
+    app.config()
+        .product_name
+        .clone()
+        .unwrap_or_else(|| app.package_info().name.clone())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -784,7 +871,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, get_ollama_api_key, add_card, get_cards, get_collections, create_collection, get_sub_collections, create_sub_collection, update_card, delete_card, set_card_skipped, clear_skipped_for_collection, export_collection_to_path, export_collections_to_path, read_export_file, import_collection_from_file, import_collections_from_path, pick_directory, count_files_in_directory, list_files_in_directory, read_file_base64])
+        .invoke_handler(tauri::generate_handler![greet, get_ollama_api_key, get_app_name, add_card, get_cards, get_collections, create_collection, update_collection, delete_collection, get_sub_collections, create_sub_collection, update_sub_collection, delete_sub_collection, update_card, delete_card, set_card_skipped, clear_skipped_for_collection, export_collection_to_path, export_collections_to_path, read_export_file, import_collection_from_file, import_collections_from_path, pick_directory, count_files_in_directory, list_files_in_directory, read_file_base64])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

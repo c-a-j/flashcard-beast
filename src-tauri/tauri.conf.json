@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "notecard-beast",
+  "productName": "flashcard-beast",
   "version": "0.1.0",
-  "identifier": "com.notecard-beast.app",
+  "identifier": "com.flashcard-beast.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,12 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "notecard-beast",
+        "title": "Flashcard Beast",
         "width": 800,
         "height": 600,
         "visible": false,
         "label": "main",
-        "fullscreen": true
+        "fullscreen": false
       }
     ],
     "security": {

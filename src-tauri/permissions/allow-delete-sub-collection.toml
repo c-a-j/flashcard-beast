@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-delete-sub-collection"
+description = "Enables the delete_sub_collection command to delete a sub-collection (cards move to default)."
+commands.allow = ["delete_sub_collection"]

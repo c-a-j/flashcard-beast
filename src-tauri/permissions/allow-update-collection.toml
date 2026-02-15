@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-update-collection"
+description = "Enables the update_collection command to rename a collection."
+commands.allow = ["update_collection"]

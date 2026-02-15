@@ -19,8 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-const APP_NAME = "notecard-beast";
-
 function sanitizeFilename(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, "-").trim() || "collection";
 }
@@ -38,6 +36,7 @@ type ImportRowState = {
 
 export function ImportExport() {
   const [collections, setCollections] = useState<StoredCollection[]>([]);
+  const [appName, setAppName] = useState<string>("");
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>("all");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -53,9 +52,24 @@ export function ImportExport() {
 
   const isExportAll = selectedCollectionId === "all";
   const selectedCollection = collections.find((c) => String(c.id) === selectedCollectionId);
-  const defaultExportFilename = isExportAll
-    ? `${APP_NAME}-export.json`
-    : `${APP_NAME}-${sanitizeFilename(selectedCollection?.name ?? "collection").toLowerCase()}-export.json`;
+  const defaultExportFilename =
+    !appName
+      ? "export.json"
+      : isExportAll
+        ? `${appName}-export.json`
+        : `${appName}-${sanitizeFilename(selectedCollection?.name ?? "collection").toLowerCase()}-export.json`;
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<string>("get_app_name")
+      .then((name) => {
+        if (!cancelled) setAppName(name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,7 +156,7 @@ export function ImportExport() {
             selected: true,
             destinationMode: "new" as const,
             destinationId: "",
-            newName: fc.name.trim(),
+            newName: "",
           };
         })
       );

@@ -22,15 +22,16 @@
     "allow-add-card",
     "allow-get-cards",
     "allow-get-collections",
-    "allow-create-collection",
+    "allow-create-collection","allow-update-collection","allow-delete-collection",
     "allow-get-sub-collections",
-    "allow-create-sub-collection",
+    "allow-create-sub-collection","allow-update-sub-collection","allow-delete-sub-collection",
     "allow-update-card",
     "allow-delete-card",
     "allow-set-card-skipped",
     "allow-clear-skipped-for-collection",
     "allow-export-collections-to-path",
     "allow-import-collections-from-path",
-    "allow-get-ollama-api-key"
+    "allow-get-ollama-api-key",
+    "allow-get-app-name"
   ]
 }

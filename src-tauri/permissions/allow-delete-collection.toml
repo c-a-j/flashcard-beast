@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-delete-collection"
+description = "Enables the delete_collection command to delete a collection and its cards."
+commands.allow = ["delete_collection"]

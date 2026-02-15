@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { Ollama, type Message } from "ollama"
+import { Ollama, type Message } from "ollama/browser"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

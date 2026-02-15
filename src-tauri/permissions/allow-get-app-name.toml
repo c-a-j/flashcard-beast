@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-app-name"
+description = "Enables the get_app_name command to read the app product name from config."
+commands.allow = ["get_app_name"]
