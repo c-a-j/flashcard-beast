@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "allow-get-collections"
-description = "Enables the get_collections command to list notecard collections."
+description = "Enables the get_collections command to list flashcard collections."
 commands.allow = ["get_collections"]

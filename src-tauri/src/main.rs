@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    notecard_beast_lib::run()
+    flashcard_beast_lib::run()
 }

@@ -177,7 +177,7 @@ export function CreateCards() {
         <CardHeader>
           <CardTitle>Create Cards</CardTitle>
           <CardDescription>
-            Add a question and answer to create a notecard. Choose a collection to add it to.
+            Add a question and answer to create a flashcard. Choose a collection to add it to.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -362,7 +362,7 @@ export function CreateCards() {
         <CardHeader>
           <CardTitle>Card Preview</CardTitle>
           <CardDescription>
-            Preview how your notecard will look.
+            Preview how your flashcard will look.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "allow-update-card"
-description = "Enables the update_card command to edit a notecard."
+description = "Enables the update_card command to edit a flashcard."
 commands.allow = ["update_card"]

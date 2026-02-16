@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn, generateNotecard, parseNotecard } from "@/lib/utils";
+import { cn, DEFAULT_PROMPT_PREFIX, generateFlashcard, parseFlashcard } from "@/lib/utils";
 import { createWorker } from "tesseract.js";
 
 const OLLAMA_HOSTS = {
@@ -74,6 +74,7 @@ export function BulkCreate() {
   });
   const [llmEnabled, setLlmEnabled] = useState(true);
   const [autorunEnabled, setAutorunEnabled] = useState(true);
+  const [promptPrefix, setPromptPrefix] = useState(DEFAULT_PROMPT_PREFIX);
   const [ollamaHost, setOllamaHost] = useState<"local" | "cloud">("local");
   const [model, setModel] = useState("glm-4.7-flash");
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -103,10 +104,10 @@ export function BulkCreate() {
   const hasProcessedText = currentQueueItem != null;
 
   // Refs for stable access to LLM config inside async callbacks
-  const configRef = useRef({ ollamaHost, model, llmEnabled });
+  const configRef = useRef({ ollamaHost, model, llmEnabled, promptPrefix });
   useEffect(() => {
-    configRef.current = { ollamaHost, model, llmEnabled };
-  }, [ollamaHost, model, llmEnabled]);
+    configRef.current = { ollamaHost, model, llmEnabled, promptPrefix };
+  }, [ollamaHost, model, llmEnabled, promptPrefix]);
 
   // Track which paths we've already kicked off LLM for (prevents double-starts from race conditions)
   const llmStartedRef = useRef(new Set<string>());
@@ -129,15 +130,17 @@ export function BulkCreate() {
       const host = OLLAMA_HOSTS[host_];
       const apiKey =
         host_ === "cloud" ? await invoke<string>("get_ollama_api_key") : undefined;
-      const message = await generateNotecard(
+      const prefix = configRef.current.promptPrefix.trim() || undefined;
+      const message = await generateFlashcard(
         text,
+        prefix,
         model_,
         host,
         apiKey ?? undefined,
         host_ === "cloud" ? tauriFetch : undefined
       );
       const content = message.content ?? "";
-      const notecard = parseNotecard(content);
+      const flashcard = parseFlashcard(content);
       setOcrQueue((prev) =>
         prev.map((item) =>
           item.path === path
@@ -145,8 +148,8 @@ export function BulkCreate() {
                 ...item,
                 llmStatus: "done" as const,
                 llmResponse: content,
-                llmQuestion: notecard.question,
-                llmAnswer: notecard.answer,
+                llmQuestion: flashcard.question,
+                llmAnswer: flashcard.answer,
               }
             : item
         )
@@ -497,7 +500,7 @@ export function BulkCreate() {
         <CardHeader>
           <CardTitle>Bulk Create</CardTitle>
           <CardDescription>
-            Add many notecards at once. Paste or type bulk content and configure how cards are split.
+            Add many flashcards at once. Paste or type bulk content and configure how cards are split.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -659,6 +662,17 @@ export function BulkCreate() {
             </div>
           </div>
           <div className="grid w-full gap-2">
+            <Label htmlFor="bulk-prompt-prefix">Prompt prefix</Label>
+            <Textarea
+              id="bulk-prompt-prefix"
+              value={promptPrefix}
+              onChange={(e) => setPromptPrefix(e.target.value)}
+              placeholder={DEFAULT_PROMPT_PREFIX}
+              className="min-h-[7rem] resize-y font-mono text-sm bg-muted/50"
+              disabled={!llmEnabled}
+            />
+          </div>
+          <div className="grid w-full gap-2">
             <Label>Ollama host</Label>
             <Select
               value={ollamaHost}
@@ -734,7 +748,7 @@ export function BulkCreate() {
         <CardHeader>
           <CardTitle>Card Preview</CardTitle>
           <CardDescription>
-            Preview how your notecards will look.
+            Preview how your flashcards will look.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

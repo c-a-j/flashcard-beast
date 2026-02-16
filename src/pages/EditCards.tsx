@@ -503,7 +503,7 @@ export function EditCards() {
           <CardHeader>
             <CardTitle>Edit Cards</CardTitle>
             <CardDescription>
-              Edit or delete notecards in a collection.
+              Edit or delete flashcards in a collection.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -522,7 +522,7 @@ export function EditCards() {
       <div className="shrink-0 pb-4">
         <h2 className="text-2xl font-semibold tracking-tight">Edit Cards</h2>
         <p className="text-muted-foreground text-sm">
-          Edit or delete notecards in a collection.
+          Edit or delete flashcards in a collection.
         </p>
 
         <div className="mt-4 flex flex-wrap items-end gap-4">

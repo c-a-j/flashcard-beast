@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "allow-get-cards"
-description = "Enables the get_cards command to load notecards from SQLite."
+description = "Enables the get_cards command to load flashcards from SQLite."
 commands.allow = ["get_cards"]

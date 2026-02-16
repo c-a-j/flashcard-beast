@@ -13,7 +13,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { generateNotecard } from "@/lib/utils";
+import { DEFAULT_PROMPT_PREFIX, generateFlashcard } from "@/lib/utils";
 
 const OLLAMA_HOSTS = {
   local: "http://localhost:11434",
@@ -23,7 +23,8 @@ const OLLAMA_HOSTS = {
 export function OllamaTest() {
   const [ollamaHost, setOllamaHost] = useState<"local" | "cloud">("local");
   const [model, setModel] = useState("glm-4.7-flash");
-  const [notecardInfo, setNotecardInfo] = useState("");
+  const [promptPrefix, setPromptPrefix] = useState(DEFAULT_PROMPT_PREFIX);
+  const [flashcardInfo, setFlashcardInfo] = useState("");
   const [response, setResponse] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,8 +40,10 @@ export function OllamaTest() {
       apiKey = isOllamaCloud
         ? await invoke<string>("get_ollama_api_key")
         : undefined;
-      const message = await generateNotecard(
-        notecardInfo.trim() || "Sample topic: photosynthesis",
+      const prefix = promptPrefix.trim() || undefined;
+      const message = await generateFlashcard(
+        flashcardInfo.trim() || "Sample topic: photosynthesis",
+        prefix,
         model,
         host,
         apiKey || undefined,
@@ -68,7 +71,7 @@ export function OllamaTest() {
         <CardHeader>
           <CardTitle>Ollama Test</CardTitle>
           <CardDescription>
-            Test the generateNotecard function. Use a local Ollama server or a cloud API URL. Enter information and get a question/answer notecard in JSON.
+            Test the generateFlashcard function. Use a local Ollama server or a cloud API URL. Enter information and get a question/answer flashcard in JSON.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -101,12 +104,22 @@ export function OllamaTest() {
             />
           </div>
           <div className="grid w-full gap-2">
-            <Label htmlFor="notecard-info">Notecard information</Label>
+            <Label htmlFor="ollama-test-prompt-prefix">Prompt prefix</Label>
             <Textarea
-              id="notecard-info"
-              value={notecardInfo}
-              onChange={(e) => setNotecardInfo(e.target.value)}
-              placeholder="Enter the information to turn into a notecard (e.g. a fact or topic)…"
+              id="ollama-test-prompt-prefix"
+              value={promptPrefix}
+              onChange={(e) => setPromptPrefix(e.target.value)}
+              placeholder={DEFAULT_PROMPT_PREFIX}
+              className="min-h-[7rem] resize-y font-mono text-sm bg-muted/50"
+            />
+          </div>
+          <div className="grid w-full gap-2">
+            <Label htmlFor="flashcard-info">Flashcard information</Label>
+            <Textarea
+              id="flashcard-info"
+              value={flashcardInfo}
+              onChange={(e) => setFlashcardInfo(e.target.value)}
+              placeholder="Enter the information to turn into a flashcard (e.g. a fact or topic)…"
               rows={4}
             />
           </div>
@@ -125,7 +138,7 @@ export function OllamaTest() {
         <CardHeader>
           <CardTitle>Response</CardTitle>
           <CardDescription>
-            Notecard (question/answer JSON) will appear here.
+            Flashcard (question/answer JSON) will appear here.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

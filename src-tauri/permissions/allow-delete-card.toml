@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "allow-delete-card"
-description = "Enables the delete_card command to remove a notecard."
+description = "Enables the delete_card command to remove a flashcard."
 commands.allow = ["delete_card"]

@@ -331,7 +331,7 @@ export function Study() {
           <CardHeader>
             <CardTitle>Study</CardTitle>
             <CardDescription>
-              Review your notecards. Flip to reveal answers and track what you know.
+              Review your flashcards. Flip to reveal answers and track what you know.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -363,7 +363,7 @@ export function Study() {
           <CardHeader>
             <CardTitle>Study</CardTitle>
             <CardDescription>
-              Review your notecards. Flip to reveal answers and track what you know.
+              Review your flashcards. Flip to reveal answers and track what you know.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -418,7 +418,7 @@ export function Study() {
           <CardHeader>
             <CardTitle>Study</CardTitle>
             <CardDescription>
-              Review your notecards. Flip to reveal answers and track what you know.
+              Review your flashcards. Flip to reveal answers and track what you know.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -470,7 +470,7 @@ export function Study() {
         <CardHeader>
           <CardTitle>Study</CardTitle>
           <CardDescription>
-            Review your notecards. Flip to reveal answers and track what you know.
+            Review your flashcards. Flip to reveal answers and track what you know.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

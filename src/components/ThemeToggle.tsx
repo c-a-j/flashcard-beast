@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const STORAGE_KEY = "notecard-beast-theme";
+const STORAGE_KEY = "flashcard-beast-theme";
 
 function getInitialTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "dark";
