@@ -1,7 +1,20 @@
-# Tauri + React + Typescript
+# Flashcard Beast
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Vibe coded desktop flashcard app for creating cards from images or manually.
+Built with [Tauri](https://tauri.app), React, and Vite.
 
-## Recommended IDE Setup
+**Features:** bulk create, study mode, edit cards, import/export. Optionally
+uses [Ollama](https://ollama.ai) for AI-generated cards and Tesseract for OCR.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Run
+
+```bash
+npm install
+npm run tauri dev
+```
+
+## Build
+
+```bash
+npm run tauri build
+```
