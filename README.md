@@ -1,6 +1,6 @@
 # Flashcard Beast
 
-Vibe coded desktop flashcard app for creating cards from images or manually.
+Desktop flashcard app for generating flashcards from images or manually.
 Built with [Tauri](https://tauri.app), React, and Vite.
 
 **Features:** bulk create, study mode, edit cards, import/export. Optionally
