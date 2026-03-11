@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, DEFAULT_PROMPT_PREFIX, generateFlashcard, parseFlashcard } from "@/lib/utils";
-import { createWorker } from "tesseract.js";
+import { createWorker, type ImageLike } from "tesseract.js";
 
 const OLLAMA_HOSTS = {
   local: "http://localhost:11434",
@@ -42,13 +42,6 @@ type OcrQueueItem = {
   llmStatus: "idle" | "running" | "done" | "error";
 };
 
-const BULK_IMAGE_FORMAT_MIME: Record<string, string> = {
-  png: "image/png",
-  jpeg: "image/jpeg",
-  webp: "image/webp",
-  gif: "image/gif",
-};
-
 const BULK_IMAGE_FORMATS = [
   { value: "png", label: "PNG" },
   { value: "jpeg", label: "JPEG" },
@@ -57,6 +50,15 @@ const BULK_IMAGE_FORMATS = [
 ] as const;
 
 const BULK_DIRECTORY_STORAGE_KEY = "bulk-create-directory";
+
+function base64ToBytes(base64: string): Uint8Array {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export function BulkCreate() {
   const [collections, setCollections] = useState<StoredCollection[]>([]);
@@ -114,6 +116,17 @@ export function BulkCreate() {
 
   // Track all file paths already in or processed through the queue (for new-file polling)
   const knownPathsRef = useRef(new Set<string>());
+
+  // Persistent tesseract worker reused across the initial OCR run and poll cycles
+  const ocrWorkerRef = useRef<Awaited<ReturnType<typeof createWorker>> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (ocrWorkerRef.current) {
+        ocrWorkerRef.current.terminate();
+        ocrWorkerRef.current = null;
+      }
+    };
+  }, []);
 
   // Core: run LLM for a specific queue item by path and store the result in the queue
   const runLlmForPath = useCallback(async (path: string, text: string) => {
@@ -255,6 +268,10 @@ export function BulkCreate() {
 
   function handleRunLlm() {
     if (!currentQueueItem || !rawTextRead.trim() || !llmEnabled) return;
+    if (!autorunEnabled) {
+      runLlmForPath(currentQueueItem.path, rawTextRead);
+      return;
+    }
     // Reset item so the look-ahead effect re-runs it
     llmStartedRef.current.delete(currentQueueItem.path);
     setOcrQueue((prev) =>
@@ -264,6 +281,11 @@ export function BulkCreate() {
           : item
       )
     );
+  }
+
+  function handleSwapQuestionAndAnswer() {
+    setEditQuestion(editAnswer);
+    setEditAnswer(editQuestion);
   }
 
   useEffect(() => {
@@ -382,21 +404,16 @@ export function BulkCreate() {
       });
       setFileCount(paths.length);
       paths.forEach((p) => knownPathsRef.current.add(p));
-      const mime = BULK_IMAGE_FORMAT_MIME[bulkFileFormat] ?? "image/png";
       const worker = await createWorker("eng");
-      try {
-        for (const path of paths) {
-          try {
-            const base64 = await invoke<string>("read_file_base64", { path });
-            const dataUrl = `data:${mime};base64,${base64}`;
-            const { data } = await worker.recognize(dataUrl);
-            setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
-          } catch {
-            setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
-          }
+      ocrWorkerRef.current = worker;
+      for (const path of paths) {
+        try {
+          const base64 = await invoke<string>("read_file_base64", { path });
+          const { data } = await worker.recognize(base64ToBytes(base64) as ImageLike);
+          setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
+        } catch {
+          setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
         }
-      } finally {
-        await worker.terminate();
       }
     } finally {
       setOcrProcessing(false);
@@ -434,11 +451,14 @@ export function BulkCreate() {
     };
   }, [selectedDirectory, bulkFileFormat]);
 
-  // Poll the directory every 5 s for new files until the user clicks "Stop Creating Cards"
+  // Poll the directory every 5 s for new files until the user clicks "Stop Creating Cards".
+  // Uses setTimeout (not setInterval) so the next poll waits for the current one to finish,
+  // and reuses the persistent tesseract worker instead of creating a new one each cycle.
   useEffect(() => {
     if (!selectedDirectory || !sessionActive || ocrProcessing) return;
 
     let active = true;
+    let timer: ReturnType<typeof setTimeout>;
 
     const poll = async () => {
       if (!active) return;
@@ -455,33 +475,31 @@ export function BulkCreate() {
 
         newPaths.forEach((p) => knownPathsRef.current.add(p));
 
-        const mime = BULK_IMAGE_FORMAT_MIME[bulkFileFormat] ?? "image/png";
-        const worker = await createWorker("eng");
-        try {
-          for (const path of newPaths) {
-            if (!active) break;
-            try {
-              const base64 = await invoke<string>("read_file_base64", { path });
-              const dataUrl = `data:${mime};base64,${base64}`;
-              const { data } = await worker.recognize(dataUrl);
-              setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
-            } catch {
-              setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
-            }
+        const worker = ocrWorkerRef.current;
+        if (!worker || !active) return;
+
+        for (const path of newPaths) {
+          if (!active) break;
+          try {
+            const base64 = await invoke<string>("read_file_base64", { path });
+            const { data } = await worker.recognize(base64ToBytes(base64) as ImageLike);
+            setOcrQueue((prev) => [...prev, { path, text: data.text ?? "", llmStatus: "idle" }]);
+          } catch {
+            setOcrQueue((prev) => [...prev, { path, text: "", llmStatus: "idle" }]);
           }
-        } finally {
-          await worker.terminate();
         }
       } catch {
         // ignore polling errors
+      } finally {
+        if (active) timer = setTimeout(poll, 5000);
       }
     };
 
-    const interval = setInterval(poll, 5000);
+    timer = setTimeout(poll, 5000);
 
     return () => {
       active = false;
-      clearInterval(interval);
+      clearTimeout(timer);
     };
   }, [selectedDirectory, bulkFileFormat, sessionActive, ocrProcessing]);
 
@@ -714,6 +732,10 @@ export function BulkCreate() {
               }
               onClick={() => {
                 if (sessionActive) {
+                  if (ocrWorkerRef.current) {
+                    ocrWorkerRef.current.terminate();
+                    ocrWorkerRef.current = null;
+                  }
                   setSessionActive(false);
                   setOcrQueue([]);
                   setPreviewIndex(0);
@@ -919,6 +941,14 @@ export function BulkCreate() {
               onClick={handleRunLlm}
             >
               {llmLoading ? "Running…" : "Run LLM"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!hasProcessedText}
+              onClick={handleSwapQuestionAndAnswer}
+            >
+              Swap Q/A
             </Button>
           </div>
         </CardContent>
